@@ -186,6 +186,14 @@ pub struct AuthSession {
     pub token: String,
     pub expires_at: DateTime<Utc>,
     pub user: AuthUser,
+    /// Core -> gateway only: the refresh token of a cookie family. athenos-api
+    /// moves it into the `__Host-athenos_refresh` cookie and strips it from the
+    /// body, so it never reaches the browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    /// When the cookie family ends (the cookie's `Max-Age`); with `refresh_token`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -239,6 +247,14 @@ pub struct SessionInfo {
     pub created_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_current: bool,
+    /// The latest the session can last: sign-in plus the maximum lifetime,
+    /// whatever the activity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    /// When the session ends unless it is used again before (last activity
+    /// plus the idle limit, never after `expires_at`); none without an idle limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_expires_at: Option<DateTime<Utc>>,
 }
 
 /// A verification code sent again (`POST /auth/challenge/{id}/resend`).

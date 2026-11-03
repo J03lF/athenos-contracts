@@ -98,6 +98,10 @@ export interface SessionInfo {
   created_at: string;
   last_activity: string;
   is_current: boolean;
+  /** The latest the session can last (sign-in plus the maximum lifetime). */
+  expires_at?: string;
+  /** When it ends unless used again before (last activity plus the idle limit). */
+  idle_expires_at?: string;
 }
 
 /**
