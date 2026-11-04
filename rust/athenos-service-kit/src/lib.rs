@@ -22,7 +22,7 @@
 //! | [`outbound`] | the client for user-supplied URLs (webhooks): SSRF guard after DNS, scheme/port allowlist, size cap |
 //! | [`observability`] | tracing init (text or JSON, env filter, optional OTLP), [`observability::redact`] |
 //! | [`run_mode`] | `FENRIR_ENV` → production or dev (missing/unknown = production), module overrides only tighten, dev-only settings refused in production |
-//! | [`shutdown`] | signal, [`shutdown::Drain`] and the layer that answers `ATH-SYS-005` while draining |
+//! | [`shutdown`] | signal, [`shutdown::Drain`], the layer that answers `ATH-SYS-005` while draining and the one that ends event streams when draining begins |
 //! | [`body_fault`] | what a request body that does not fit its contract got wrong |
 //! | [`error_class`] | the error classes every failure maps onto |
 //!
@@ -62,5 +62,5 @@ pub use service_auth::{
     AuthenticatedService, ServiceAuth, ServiceAuthConfig, ServiceAuthLayer, ServiceAuthMode,
     ServiceCredential,
 };
-pub use shutdown::{Drain, DrainLayer};
+pub use shutdown::{Drain, DrainLayer, EndStreamsLayer};
 pub use util::{BoxFuture, Render};
