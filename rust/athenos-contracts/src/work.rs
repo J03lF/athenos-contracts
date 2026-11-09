@@ -1114,8 +1114,9 @@ pub struct DeletedTicketResponse {
 //
 // Deleting a ticket moves it, with its subtasks, to its workspace's trash.
 // Nothing reads it there but the trash itself: lists, counts, search, key
-// lookups, the inbox and every per-ticket route (`404`) leave it out, and
-// the change feed reports it as `deleted` (`crate::ticket_changes`). The
+// lookups and the inbox leave it out, every per-ticket route refuses it
+// exactly like an id nobody has (the core's `403`, no existence oracle),
+// and the change feed reports it as `deleted` (`crate::ticket_changes`). The
 // workspace's owners and admins (`ticket.restore`, `ticket.purge`) list the
 // trash, restore a ticket from it, or remove one for good at once; after
 // [`TICKET_TRASH_RETENTION_DAYS`] the core removes it for good by itself.
@@ -1132,8 +1133,9 @@ pub struct DeletedTicketResponse {
 // Both writes take a root only; anything else is a `409` with
 // `details.reason` [`TICKET_NOT_IN_TRASH_REASON`],
 // [`TICKET_NOT_TRASH_ROOT_REASON`] or (restore)
-// [`TICKET_PARENT_IN_TRASH_REASON`], and a restore into an archived project
-// is the `409` [`PROJECT_ARCHIVED_CODE`].
+// [`TICKET_PARENT_IN_TRASH_REASON`]. An archived project is read-only, its
+// trash included: a restore or a purge there is the `409`
+// [`PROJECT_ARCHIVED_CODE`] (the purge after the retention still runs).
 
 /// Days a deleted ticket stays in its workspace's trash before the core
 /// removes it for good (N-19). The one place the number lives: the core's

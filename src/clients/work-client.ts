@@ -328,7 +328,8 @@ export class WorkApiClient {
    * Remove a ticket from the trash for good now, with its subtasks,
    * comments and attachments; there is no undo. A ticket that is not a
    * deleted root is a `409` (`TICKET_NOT_IN_TRASH_REASON`,
-   * `TICKET_NOT_TRASH_ROOT_REASON`). Owners and admins only.
+   * `TICKET_NOT_TRASH_ROOT_REASON`); an archived project's is the `409`
+   * `PROJECT_ARCHIVED_CODE`. Owners and admins only.
    */
   purgeTicket(id: string): Promise<PurgedTicketResponse> {
     return this.http
