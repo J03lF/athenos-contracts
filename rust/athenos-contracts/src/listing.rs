@@ -51,14 +51,14 @@ pub const TICKET_LIST_MAX_IDS: usize = 100;
 pub const TICKET_FACET_MAX_VALUES: usize = 50;
 
 /// One page of a list. `data` is in the order the query asked for.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, TS)]
 #[ts(export_to = "work/")]
 pub struct Page<T> {
     pub data: Vec<T>,
     pub meta: PageMeta,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema, TS)]
 #[ts(export_to = "work/")]
 pub struct PageMeta {
     /// The cursor of the next page; `null` on the last one.
@@ -126,7 +126,7 @@ impl TicketFacet {
 /// each of its choices would find. Largest counts first, then by key; at
 /// most [`TICKET_FACET_MAX_VALUES`] values each. A facet not asked for is
 /// absent.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
 #[ts(export_to = "work/", optional_fields)]
 pub struct TicketFacets {
     #[serde(default, skip_serializing_if = "Option::is_none")]

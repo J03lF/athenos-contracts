@@ -14,6 +14,10 @@ import type {
   WorkLogResponse,
   ProjectReportResponse,
   DeletedTicketResponse,
+  PurgedTicketResponse,
+  RestoredTicketResponse,
+  TicketTrashQuery,
+  TrashedTicketResponse,
   CreateLabelRequest,
   LabelAssignmentResponse,
   CreateProjectRequest,
@@ -272,12 +276,66 @@ export class WorkApiClient {
       .then(unwrap);
   }
   /**
-   * Delete a ticket for good, with its subtasks, comments, labels, links
-   * and watchers. Operators only.
+   * Delete a ticket: it moves, with its subtasks, to the workspace's trash
+   * for `TICKET_TRASH_RETENTION_DAYS` days (`purge_after`), where the
+   * workspace's owners and admins can restore it (N-19). Its reporter, or
+   * whoever may delete any ticket.
    */
   deleteTicket(id: string): Promise<DeletedTicketResponse> {
     return this.http
       .delete<ApiEnvelope<DeletedTicketResponse>>(`/work/tickets/${id}`)
+      .then(unwrap);
+  }
+
+  // ---------- Ticket trash (N-19) ----------
+  /**
+   * One page of the workspace's ticket trash, newest deletion first: the
+   * tickets deleted on their own, each with the subtasks it took along.
+   * Pass the page before's `meta.next_cursor` as `cursor`. Owners and
+   * admins only (`403` otherwise).
+   */
+  listTicketTrash(
+    workspaceId: string,
+    query: TicketTrashQuery = {},
+    init: RequestOptions = {},
+  ): Promise<Page<TrashedTicketResponse>> {
+    const params = new URLSearchParams();
+    if (query.limit != null) params.set('limit', String(query.limit));
+    if (query.cursor) params.set('cursor', query.cursor);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.http.get<Page<TrashedTicketResponse>>(
+      `/work/workspaces/${encodeURIComponent(workspaceId)}/ticket-trash${qs}`,
+      { signal: init.signal },
+    );
+  }
+  /**
+   * Bring a ticket back from the trash, with the subtasks deleted along
+   * with it, at a new version. A ticket that is not a deleted root, or
+   * whose parent is in the trash, is a `409` (`details.reason`
+   * `TICKET_NOT_IN_TRASH_REASON`, `TICKET_NOT_TRASH_ROOT_REASON`,
+   * `TICKET_PARENT_IN_TRASH_REASON`); an archived project's is the `409`
+   * `PROJECT_ARCHIVED_CODE`. Owners and admins only.
+   */
+  restoreTicket(id: string): Promise<RestoredTicketResponse> {
+    return this.http
+      .post<ApiEnvelope<RestoredTicketResponse>>(
+        `/work/tickets/${encodeURIComponent(id)}/restore`,
+        {},
+      )
+      .then(unwrap);
+  }
+  /**
+   * Remove a ticket from the trash for good now, with its subtasks,
+   * comments and attachments; there is no undo. A ticket that is not a
+   * deleted root is a `409` (`TICKET_NOT_IN_TRASH_REASON`,
+   * `TICKET_NOT_TRASH_ROOT_REASON`). Owners and admins only.
+   */
+  purgeTicket(id: string): Promise<PurgedTicketResponse> {
+    return this.http
+      .post<ApiEnvelope<PurgedTicketResponse>>(
+        `/work/tickets/${encodeURIComponent(id)}/purge`,
+        {},
+      )
       .then(unwrap);
   }
   /**

@@ -5,6 +5,7 @@ import type { ActivityAction } from "./ActivityAction";
 export const ACTIVITY_ACTIONS: readonly ActivityAction[] = [
   "ticket_created",
   "ticket_deleted",
+  "ticket_restored",
   "ticket_status_changed",
   "ticket_assigned",
   "ticket_triaged",

@@ -60,7 +60,14 @@ pub type ActivityListResponse = crate::ListResponse<ActivityEventResponse>;
 #[ts(export_to = "activity/")]
 pub enum ActivityAction {
     TicketCreated,
+    /// The ticket, with its subtasks, moved to the workspace's trash
+    /// (N-19; an older core deleted it for good).
     TicketDeleted,
+    /// The ticket, with the subtasks deleted along with it, back from the
+    /// trash (N-19), by one of the workspace's owners or admins. Nobody is
+    /// notified; removing a ticket from the trash for good is no activity
+    /// (the audit log has it).
+    TicketRestored,
     TicketStatusChanged,
     TicketAssigned,
     TicketTriaged,
@@ -202,6 +209,7 @@ impl ActivityAction {
     pub const ALL: &'static [Self] = &[
         Self::TicketCreated,
         Self::TicketDeleted,
+        Self::TicketRestored,
         Self::TicketStatusChanged,
         Self::TicketAssigned,
         Self::TicketTriaged,
@@ -299,6 +307,7 @@ impl ActivityAction {
         match self {
             Self::TicketCreated => "ticket_created",
             Self::TicketDeleted => "ticket_deleted",
+            Self::TicketRestored => "ticket_restored",
             Self::TicketStatusChanged => "ticket_status_changed",
             Self::TicketAssigned => "ticket_assigned",
             Self::TicketTriaged => "ticket_triaged",

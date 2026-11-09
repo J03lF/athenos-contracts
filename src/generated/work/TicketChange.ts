@@ -5,15 +5,18 @@
  */
 export type TicketChange = { ticket_id: string, 
 /**
- * Its project now; `null` for a deleted ticket.
+ * Its project now; may be `null` for a deleted ticket.
  */
 project_id: string | null, 
 /**
- * Its version now; `null` for a deleted ticket.
+ * Its version now. For a deleted ticket the version its move to the
+ * trash gave it; `null` only from an older core (see the module
+ * documentation).
  */
 version: number | null, 
 /**
- * The ticket is gone (with its subtasks, which change on their own).
+ * The ticket is gone for its readers: in the trash, or (an older core)
+ * deleted for good. Its subtasks went with it and change on their own.
  */
 deleted: boolean, 
 /**

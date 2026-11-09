@@ -6,8 +6,9 @@
 //! belongs to one [`NotificationEvent`] ([`NotificationEvent::of_action`],
 //! exhaustive) — comment, mention, status change, assignment, queue arrival
 //! (a status change into a queue of the reader's role), due soon,
-//! attachment, field change. A verb without one (a sprint, a doc) never
-//! reaches the inbox through this layer.
+//! attachment, field change. A verb without one (a sprint, a doc; a ticket
+//! deleted or restored from the trash) never reaches the inbox through this
+//! layer.
 //!
 //! **Delivery.** Per person, per event and per channel ([`NotificationChannel`]:
 //! the inbox, always there, and email, when the core can send mail):
@@ -120,8 +121,12 @@ impl NotificationEvent {
             | A::TicketSprintUnassigned
             | A::TicketDueFollowedSprint
             | A::TicketReleaseNoteUpdated => Some(Self::FieldChange),
-            // The ticket is gone: nobody can open it any more.
+            // The ticket is gone: nobody can open it any more. A restore
+            // from the trash (N-19) is an owner's or admin's recovery: the
+            // ticket reappears in lists through the change feed, and
+            // nobody is told.
             A::TicketDeleted
+            | A::TicketRestored
             | A::ProjectUpdated
             | A::ProjectCustomValuesUpdated
             | A::SprintCreated
@@ -765,13 +770,16 @@ mod tests {
             let verb = action.as_str();
             let ticket = verb.starts_with("ticket_") && !verb.starts_with("ticket_type_");
             let event = NotificationEvent::of_action(*action);
-            if ticket && *action != ActivityAction::TicketDeleted {
+            // Gone (deleted), or an owner's recovery from the trash
+            // (restored, N-19): nobody is notified of either.
+            let silent = matches!(
+                action,
+                ActivityAction::TicketDeleted | ActivityAction::TicketRestored
+            );
+            if ticket && !silent {
                 assert!(event.is_some(), "{action} has no event");
             } else {
-                assert!(
-                    event.is_none(),
-                    "{action} is not about a ticket one can open"
-                );
+                assert!(event.is_none(), "{action} notifies nobody");
             }
         }
     }

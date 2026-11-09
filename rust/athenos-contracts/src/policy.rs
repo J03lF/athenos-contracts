@@ -44,7 +44,7 @@ use crate::workspace::WorkspaceMemberRole;
 
 /// The rules' revision. Bumped whenever a verdict in the matrix changes
 /// (`tests/policy_matrix.rs` keeps the history).
-pub const POLICY_REVISION: u32 = 8;
+pub const POLICY_REVISION: u32 = 9;
 
 /// The most an open link may grant (J6). Admins and owners are invited by
 /// email only: a forwarded link must not hand out the workspace.
@@ -679,9 +679,18 @@ pub enum Action {
     /// tick "Tickets bearbeiten".
     #[serde(rename = "field.suggest")]
     FieldSuggest,
+    /// Move a ticket (and its subtasks) to the workspace's trash (N-19).
     /// Facts: `owns` (the reporter).
     #[serde(rename = "ticket.delete")]
     TicketDelete,
+    /// List the workspace's ticket trash and restore a ticket from it
+    /// (N-19). Governance: the workspace's owners and admins.
+    #[serde(rename = "ticket.restore")]
+    TicketRestore,
+    /// Remove a ticket from the trash for good before its time (N-19).
+    /// Governance, like `ticket.restore`.
+    #[serde(rename = "ticket.purge")]
+    TicketPurge,
     /// Take a ticket from a queue (phase C).
     #[serde(rename = "ticket.take")]
     TicketTake,
@@ -775,7 +784,7 @@ pub enum Fact {
 
 impl Action {
     /// Every action, in wire order.
-    pub const ALL: [Action; 46] = [
+    pub const ALL: [Action; 48] = [
         Action::AdminAccess,
         Action::WorkspaceCreate,
         Action::SlaRead,
@@ -822,6 +831,8 @@ impl Action {
         Action::FieldSuggest,
         Action::AttachmentAdd,
         Action::AttachmentDelete,
+        Action::TicketRestore,
+        Action::TicketPurge,
     ];
 
     /// The wire name (`ticket.edit`), the same string serde writes.
@@ -854,6 +865,8 @@ impl Action {
             Action::TicketCreate => "ticket.create",
             Action::TicketEdit => "ticket.edit",
             Action::TicketDelete => "ticket.delete",
+            Action::TicketRestore => "ticket.restore",
+            Action::TicketPurge => "ticket.purge",
             Action::TicketTake => "ticket.take",
             Action::TicketClose => "ticket.close",
             Action::TicketWatch => "ticket.watch",
@@ -908,6 +921,10 @@ impl Action {
             | Action::TimeModerate
             | Action::AttachmentAdd
             | Action::AttachmentDelete => ActionScope::Ticket,
+            // The trash (N-19) is the workspace's: its list is, and a
+            // restore or purge is judged on the workspace (the core checks
+            // an archived project itself).
+            Action::TicketRestore | Action::TicketPurge => ActionScope::Workspace,
             _ => ActionScope::Workspace,
         }
     }
@@ -957,7 +974,8 @@ pub enum Gate {
 /// The governance rules, which stay code, not ticks (§2.3, E4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Governance {
-    /// The workspace's name, description, colour and settings; its roles.
+    /// The workspace's name, description, colour and settings; its roles;
+    /// its ticket trash (N-19).
     Runs,
     /// Give someone a role: never above one's own tier, owners only by
     /// owners, one's own only downwards (J7).
@@ -1018,6 +1036,14 @@ pub const fn requires(action: Action) -> Need {
         }
         Action::WorkspaceRead => Need::Member,
         Action::WorkspaceSettingsEdit | Action::RolesManage => Need::Governance(Governance::Runs),
+        // The ticket trash (N-19): listing, restoring and purging are the
+        // owners' and admins' alone, whatever a role ticks. This is exactly
+        // the rule of `workspace.settings.edit` (both `Governance::Runs`,
+        // both a write of the workspace, neither contextual), so the web's
+        // trash page may sit behind that gate like the other owner/admin
+        // settings pages; `the_trash_is_gated_exactly_like_the_settings`
+        // in tests/policy_matrix.rs holds the two together.
+        Action::TicketRestore | Action::TicketPurge => Need::Governance(Governance::Runs),
         Action::MembersRoleChange => Need::Governance(Governance::RoleChange),
         Action::MembersRemove => Need::Governance(Governance::Remove),
         Action::MembersRolesAssign => Need::Assign(P::MembersRolesAssign),
@@ -1984,7 +2010,7 @@ mod tests {
                 serde_json::from_value(serde_json::json!(action.as_str())).expect("parse");
             assert_eq!(back, action);
         }
-        assert_eq!(seen.len(), 46);
+        assert_eq!(seen.len(), 48);
     }
 
     #[test]

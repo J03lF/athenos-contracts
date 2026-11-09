@@ -17,7 +17,7 @@
 //! poll, and sends:
 //! - [`TICKET_STREAM_READY`] once, when the watch has its cursor;
 //! - [`TICKET_STREAM_CHANGED`] with a [`TicketChangedEvent`] whenever
-//!   tickets changed (created, edited, moved, deleted);
+//!   tickets changed (created, edited, moved, deleted, restored);
 //! - [`TICKET_STREAM_RESYNC`] when it may have missed changes (the core
 //!   was away, or more changed than one poll carries): read the sets
 //!   again;
@@ -30,6 +30,15 @@
 //! one that holds this version ignores it. A change may come twice
 //! (polls overlap by a moment so none slips between two); the version
 //! makes the second one a no-op.
+//!
+//! **The ticket trash (N-19).** A delete moves the ticket to the
+//! workspace's trash, which raises its version: its change is
+//! `deleted: true` at that version (non-null from then on; an older core,
+//! which deleted for good, sent `null`). A restore is an ordinary change
+//! (`deleted: false`) at a newer version still, so a client that dropped the
+//! ticket reads it again, and a stream that already passed the delete does
+//! not take the restore for a repeat. Removing a ticket from the trash for
+//! good sends no change: it was reported deleted when it went in.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -66,11 +75,14 @@ pub struct TicketChangesQuery {
 #[ts(export_to = "work/")]
 pub struct TicketChange {
     pub ticket_id: String,
-    /// Its project now; `null` for a deleted ticket.
+    /// Its project now; may be `null` for a deleted ticket.
     pub project_id: Option<String>,
-    /// Its version now; `null` for a deleted ticket.
+    /// Its version now. For a deleted ticket the version its move to the
+    /// trash gave it; `null` only from an older core (see the module
+    /// documentation).
     pub version: Option<i64>,
-    /// The ticket is gone (with its subtasks, which change on their own).
+    /// The ticket is gone for its readers: in the trash, or (an older core)
+    /// deleted for good. Its subtasks went with it and change on their own.
     pub deleted: bool,
     /// RFC 3339: when it changed.
     pub at: String,

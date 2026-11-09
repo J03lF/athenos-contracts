@@ -41,6 +41,10 @@ use athenos_contracts::workspace::WorkspaceMemberRole as R;
 /// else with the tick, only for members and guests and only roles within
 /// their own rights and tier; never overridable, not in the platform
 /// operator's extra. The matrix's custom role gains the tick.
+///
+/// 9: the ticket trash (N-19) — `ticket.restore` (list and restore) and
+/// `ticket.purge`, governance: owners and admins, exactly like
+/// `workspace.settings.edit`; no other verdict moved.
 const RECORDED: &[(u32, &str)] = &[
     (1, "61b199d11696ad0c"),
     (2, "aaa9fb11da7f0950"),
@@ -50,6 +54,7 @@ const RECORDED: &[(u32, &str)] = &[
     (6, "43b4ecf917bba111"),
     (7, "b397066edeec2ec9"),
     (8, "8cc66fc3572a3d92"),
+    (9, "9f46cbff63e62ba8"),
 ];
 
 /// Subjects, in the table's column order.
@@ -85,6 +90,10 @@ const TABLE: &[(Action, [Cell; 16])] = &[
     //                              O    A    M    G    OpM  AdM  AdG  OpG  PgM  Dev  Tst  PO   Cus  Nil  GsW  X
     (Action::WorkspaceRead,        [Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   Y,   N]),
     (Action::WorkspaceSettingsEdit,[Y,   Y,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N]),
+    // N-19: the ticket trash is the owners' and admins', like the settings
+    // page it sits on; "Tickets löschen (alle)" does not reach it.
+    (Action::TicketRestore,        [Y,   Y,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N]),
+    (Action::TicketPurge,          [Y,   Y,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N]),
     // E4: roles stay with owners and admins, whatever a role says.
     (Action::RolesManage,          [Y,   Y,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N]),
     (Action::InviteManage,         [Y,   Y,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   Y,   N,   N,   N]),
@@ -709,6 +718,44 @@ fn ticket_planning_is_the_roles_tick() {
     assert!(allows(&subject("M"), Action::TicketPlan, &Facts::NONE));
     assert!(!allows(&subject("M"), Action::ProjectPlan, &Facts::NONE));
     assert!(!Action::TicketPlan.contextual());
+}
+
+/// The web shows the ticket trash (N-19) behind `workspace.settings.edit`,
+/// like its other owner/admin settings pages, while the core checks
+/// `ticket.restore` / `ticket.purge`: the gates must agree for everyone,
+/// whatever the facts.
+#[test]
+fn the_trash_is_gated_exactly_like_the_settings() {
+    for action in [Action::TicketRestore, Action::TicketPurge] {
+        assert_eq!(requires(action), requires(Action::WorkspaceSettingsEdit));
+        assert_eq!(action.kind(), Action::WorkspaceSettingsEdit.kind());
+        assert_eq!(action.scope(), Action::WorkspaceSettingsEdit.scope());
+        assert!(!action.contextual());
+        let variants = [
+            Facts::NONE,
+            Facts::owned(true),
+            Facts::target(None, true),
+            Facts::unplaced(),
+        ];
+        for (name, s) in matrix::subjects() {
+            for facts in variants {
+                assert_eq!(
+                    allows(&s, action, &facts),
+                    allows(&s, Action::WorkspaceSettingsEdit, &facts),
+                    "{} as {name} with {facts:?}",
+                    action.as_str()
+                );
+            }
+        }
+    }
+    // Deleting anyone's ticket does not open the trash.
+    let deleter = Subject::new(
+        UserRole::User,
+        Some(Membership::new(R::Member, PermissionSet::ALL)),
+    );
+    assert!(allows(&deleter, Action::TicketDelete, &Facts::NONE));
+    assert!(!allows(&deleter, Action::TicketRestore, &Facts::NONE));
+    assert!(!allows(&deleter, Action::TicketPurge, &Facts::NONE));
 }
 
 fn role() -> CapabilitiesRole {

@@ -218,7 +218,9 @@ impl IntegrationEvent {
             A::SprintStarted => Some(Self::SprintStarted),
             A::SprintCompleted => Some(Self::SprintCompleted),
             A::MilestoneReleased => Some(Self::ReleasePublished),
-            A::TicketTriaged
+            // A restore from the trash (N-19) has no event of its own yet.
+            A::TicketRestored
+            | A::TicketTriaged
             | A::TicketCommentEdited
             | A::TicketMentioned
             | A::TicketLinked

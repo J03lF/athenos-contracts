@@ -22,12 +22,13 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::de::{Deserializer, Error as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use ts_rs::TS;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::edit::{SetOps, TextHash};
 use crate::Patch;
@@ -1090,13 +1091,136 @@ pub struct MoveTicketProjectResponse {
     pub moved: TicketProjectMove,
 }
 
-/// What a ticket delete took with it.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+/// What a ticket delete took with it. `DELETE /work/tickets/:id` moves the
+/// ticket and its subtasks to the workspace's trash (N-19, see
+/// [`TICKET_TRASH_RETENTION_DAYS`]); an older core deleted them for good.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema, TS)]
 #[ts(export_to = "work/")]
 pub struct DeletedTicketResponse {
     pub id: String,
-    /// Subtasks removed along with the ticket, at any depth.
+    /// Subtasks moved along with the ticket, at any depth.
     pub subtasks: usize,
+    /// When the core removes the ticket for good: the delete plus
+    /// [`TICKET_TRASH_RETENTION_DAYS`]. `null` from an older core, absent
+    /// from one older still.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub purge_after: Option<DateTime<Utc>>,
+}
+
+// ============================================================
+// Ticket trash (N-19)
+// ============================================================
+//
+// Deleting a ticket moves it, with its subtasks, to its workspace's trash.
+// Nothing reads it there but the trash itself: lists, counts, search, key
+// lookups, the inbox and every per-ticket route (`404`) leave it out, and
+// the change feed reports it as `deleted` (`crate::ticket_changes`). The
+// workspace's owners and admins (`ticket.restore`, `ticket.purge`) list the
+// trash, restore a ticket from it, or remove one for good at once; after
+// [`TICKET_TRASH_RETENTION_DAYS`] the core removes it for good by itself.
+// A trashed ticket keeps its number, so a restore never collides.
+//
+// - `GET /work/workspaces/:workspace_id/ticket-trash` ([`TicketTrashQuery`])
+//   answers a [`TicketTrashPage`] of [`TrashedTicketResponse`] rows: the
+//   tickets deleted on their own (roots), newest deletion first.
+// - `POST /work/tickets/:id/restore` brings a root back with the subtasks
+//   deleted with it ([`RestoredTicketResponse`]).
+// - `POST /work/tickets/:id/purge` removes a root and its subtasks for good
+//   ([`PurgedTicketResponse`]).
+//
+// Both writes take a root only; anything else is a `409` with
+// `details.reason` [`TICKET_NOT_IN_TRASH_REASON`],
+// [`TICKET_NOT_TRASH_ROOT_REASON`] or (restore)
+// [`TICKET_PARENT_IN_TRASH_REASON`], and a restore into an archived project
+// is the `409` [`PROJECT_ARCHIVED_CODE`].
+
+/// Days a deleted ticket stays in its workspace's trash before the core
+/// removes it for good (N-19). The one place the number lives: the core's
+/// purge and `purge_after` read it, the web's texts read the generated
+/// `work/ticket-trash-constants.ts`.
+pub const TICKET_TRASH_RETENTION_DAYS: i64 = 30;
+
+/// `409` reason (`details.reason`): the ticket is not in the trash.
+pub const TICKET_NOT_IN_TRASH_REASON: &str = "not_in_trash";
+/// `409` reason: the ticket is in the trash as a subtask of another
+/// deleted ticket; restore or purge that one.
+pub const TICKET_NOT_TRASH_ROOT_REASON: &str = "not_trash_root";
+/// `409` reason of a restore: the ticket's parent is in the trash itself
+/// (deleted on its own); restore the parent first.
+pub const TICKET_PARENT_IN_TRASH_REASON: &str = "parent_in_trash";
+
+/// `GET /work/workspaces/:workspace_id/ticket-trash`: one page of the
+/// trash, newest deletion first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, ToSchema, TS)]
+#[ts(export_to = "work/", optional_fields)]
+pub struct TicketTrashQuery {
+    /// Rows per page: 1 to [`crate::listing::TICKET_PAGE_MAX_LIMIT`]
+    /// (more is clamped), default
+    /// [`crate::listing::TICKET_PAGE_DEFAULT_LIMIT`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// The `meta.next_cursor` of the page before; opaque, at most
+    /// [`crate::listing::TICKET_CURSOR_MAX_CHARS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// A ticket in its workspace's trash: a row of
+/// `GET /work/workspaces/:workspace_id/ticket-trash`. Only tickets deleted
+/// on their own are rows; the subtasks they took along are `subtasks`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema, TS)]
+#[ts(export_to = "work/")]
+pub struct TrashedTicketResponse {
+    pub id: String,
+    /// `WEB-12`: the ticket keeps its number in the trash.
+    pub key: String,
+    pub title: String,
+    pub project_id: String,
+    pub project_key: String,
+    pub project_name: String,
+    pub deleted_at: DateTime<Utc>,
+    /// Who deleted it; `null` when that is not known.
+    #[schema(value_type = Option<String>)]
+    pub deleted_by: Option<Uuid>,
+    /// Their name; `null` when that is not known.
+    pub deleted_by_name: Option<String>,
+    /// When the core removes it for good: `deleted_at` plus
+    /// [`TICKET_TRASH_RETENTION_DAYS`].
+    pub purge_after: DateTime<Utc>,
+    /// Subtasks deleted along with it, at any depth; a restore brings them
+    /// back too.
+    pub subtasks: i64,
+}
+
+/// The answer of `GET /work/workspaces/:workspace_id/ticket-trash`: the page
+/// itself (`{ "data": [...], "meta": { "next_cursor", "limit" } }`), like
+/// the paged ticket list, with no envelope around it.
+pub type TicketTrashPage = crate::listing::Page<TrashedTicketResponse>;
+
+/// The answer of `POST /work/tickets/:id/restore`: the ticket back at a new
+/// version (the change feed reports it as an ordinary change), with the
+/// subtasks deleted along with it. A sprint completed in the meantime is
+/// cleared; WIP limits are not applied to a restore.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, TS)]
+#[ts(export_to = "work/")]
+pub struct RestoredTicketResponse {
+    #[schema(value_type = Object)]
+    pub ticket: TicketResponse,
+    /// Subtasks restored with it, at any depth.
+    pub subtasks: i64,
+}
+
+/// The answer of `POST /work/tickets/:id/purge`: the ticket removed from
+/// the trash for good, with its subtasks, comments and attachments. Its own
+/// type rather than [`DeletedTicketResponse`]: nothing brings it back, so
+/// there is no `purge_after` to report.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema, TS)]
+#[ts(export_to = "work/")]
+pub struct PurgedTicketResponse {
+    pub id: String,
+    /// Subtasks removed for good with it, at any depth.
+    pub subtasks: i64,
 }
 
 /// `PATCH /work/tickets/:id/status`.
@@ -1952,5 +2076,71 @@ mod tests {
             serde_json::to_value(LinkRelation::DuplicatedBy).expect("relation"),
             json!("duplicated_by")
         );
+    }
+
+    #[test]
+    fn a_delete_answer_without_purge_after_still_parses() {
+        // An older core answered `{ id, subtasks }` only.
+        let old: DeletedTicketResponse =
+            serde_json::from_value(json!({ "id": "t", "subtasks": 2 })).expect("old answer");
+        assert_eq!(old.purge_after, None);
+        let at = DateTime::parse_from_rfc3339("2026-12-09T10:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let new = DeletedTicketResponse {
+            purge_after: Some(at),
+            ..old
+        };
+        assert_eq!(
+            serde_json::to_value(&new).expect("serialise")["purge_after"],
+            json!("2026-12-09T10:00:00Z")
+        );
+    }
+
+    #[test]
+    fn a_trash_row_purges_retention_days_after_its_delete() {
+        let deleted_at = DateTime::parse_from_rfc3339("2026-11-09T10:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        let row = TrashedTicketResponse {
+            id: "t".into(),
+            key: "WEB-12".into(),
+            title: "Title".into(),
+            project_id: "p".into(),
+            project_key: "WEB".into(),
+            project_name: "Web".into(),
+            deleted_at,
+            deleted_by: None,
+            deleted_by_name: None,
+            purge_after: deleted_at + chrono::Duration::days(TICKET_TRASH_RETENTION_DAYS),
+            subtasks: 1,
+        };
+        let json = serde_json::to_value(&row).expect("serialise");
+        assert_eq!(json["purge_after"], json!("2026-12-09T10:00:00Z"));
+        assert_eq!(json["deleted_by"], json!(null));
+        let back: TrashedTicketResponse = serde_json::from_value(json).expect("parse");
+        assert_eq!(back, row);
+    }
+
+    #[test]
+    fn the_trash_answers_have_an_openapi_schema() {
+        use utoipa::PartialSchema;
+        // The gateway documents the trash routes with these (`ok!`).
+        let page = serde_json::to_value(TicketTrashPage::schema()).expect("page");
+        assert!(page["properties"]["data"].is_object(), "{page}");
+        assert!(page["properties"]["meta"].is_object(), "{page}");
+        let row = serde_json::to_value(TrashedTicketResponse::schema()).expect("row");
+        assert_eq!(
+            row["properties"]["deleted_by"]["type"],
+            json!(["string", "null"])
+        );
+        for schema in [
+            RestoredTicketResponse::schema(),
+            PurgedTicketResponse::schema(),
+            DeletedTicketResponse::schema(),
+        ] {
+            let schema = serde_json::to_value(schema).expect("schema");
+            assert!(schema["properties"]["subtasks"].is_object(), "{schema}");
+        }
     }
 }

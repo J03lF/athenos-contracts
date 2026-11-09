@@ -52,7 +52,9 @@ export type { ProjectReportQuery } from '../generated/work/ProjectReportQuery';
 export type { ProjectReportResponse } from '../generated/work/ProjectReportResponse';
 export type { ProjectResponse } from '../generated/work/ProjectResponse';
 export type { ProjectStatus } from '../generated/work/ProjectStatus';
+export type { PurgedTicketResponse } from '../generated/work/PurgedTicketResponse';
 export type { ReportSprintResponse } from '../generated/work/ReportSprintResponse';
+export type { RestoredTicketResponse } from '../generated/work/RestoredTicketResponse';
 export type { SetLabelsRequest } from '../generated/work/SetLabelsRequest';
 export type { SprintBurnDownResponse } from '../generated/work/SprintBurnDownResponse';
 export type { SprintCompletionStats } from '../generated/work/SprintCompletionStats';
@@ -65,6 +67,8 @@ export type { TicketLinkResponse } from '../generated/work/TicketLinkResponse';
 export type { TicketPriority } from '../generated/work/TicketPriority';
 export type { TicketResponse } from '../generated/work/TicketResponse';
 export type { TicketStatus } from '../generated/work/TicketStatus';
+export type { TicketTrashQuery } from '../generated/work/TicketTrashQuery';
+export type { TrashedTicketResponse } from '../generated/work/TrashedTicketResponse';
 export type { TicketWatcherListResponse } from '../generated/work/TicketWatcherListResponse';
 export type { TicketWatcherResponse } from '../generated/work/TicketWatcherResponse';
 export type { TriageTicketRequest } from '../generated/work/TriageTicketRequest';
@@ -87,6 +91,15 @@ export type { WorkLogListResponse } from '../generated/work/WorkLogListResponse'
 export type { WorkLogResponse } from '../generated/work/WorkLogResponse';
 export type { WorkScopeQuery } from '../generated/work/WorkScopeQuery';
 export type { WorkStatsResponse } from '../generated/work/WorkStatsResponse';
+
+// The ticket trash (N-19): how long a deleted ticket stays restorable and
+// the `details.reason`s of a refused restore or purge.
+export {
+  TICKET_TRASH_RETENTION_DAYS,
+  TICKET_NOT_IN_TRASH_REASON,
+  TICKET_NOT_TRASH_ROOT_REASON,
+  TICKET_PARENT_IN_TRASH_REASON,
+} from '../generated/work/ticket-trash-constants';
 
 import type { SprintResponse } from '../generated/work/SprintResponse';
 
