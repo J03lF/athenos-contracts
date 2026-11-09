@@ -44,4 +44,18 @@ active: boolean,
 /**
  * The selected version ([`AiModelStatus::selected_version`]).
  */
-selected: boolean, last_check: AiModelCheck | null, };
+selected: boolean, last_check: AiModelCheck | null, 
+/**
+ * A beta package's unchanged model core (`0.8.1-preview1`); `None`
+ * for any other package.
+ */
+core_model_version?: string | null, 
+/**
+ * The beta's outer contract (`athenos-quality-beta-feedback-v1`).
+ */
+feedback_contract_version?: string | null, 
+/**
+ * "Athenos AI Ticketqualität (Beta)": a local, supervised beta test
+ * (`release_ready` false); its tips never reject a ticket.
+ */
+local_beta?: boolean, };

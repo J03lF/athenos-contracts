@@ -11,4 +11,13 @@ version: string,
 /**
  * `release_ready` of the package.
  */
-release_ready: boolean, };
+release_ready: boolean, 
+/**
+ * The beta's outer contract (`athenos-quality-beta-feedback-v1`);
+ * `None` without a beta and from older cores.
+ */
+feedback_contract_version?: string | null, 
+/**
+ * "Athenos AI Ticketqualität (Beta)": a local, supervised beta test.
+ */
+local_beta?: boolean, };

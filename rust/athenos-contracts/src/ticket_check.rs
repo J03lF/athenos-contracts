@@ -505,6 +505,16 @@ pub struct QualityReport {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub assistance_unavailable: Option<AssistanceUnavailable>,
+    /// "Athenos AI Ticketqualität (Beta)": the beta's evaluation, when the
+    /// active model carries [`BETA_FEEDBACK_CONTRACT`] (through the same
+    /// gates as the assistance); `None` otherwise and from older cores.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub beta: Option<BetaQuality>,
+    /// The beta's writing checklist of the same evaluation.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub beta_checklist: Option<BetaWritingChecklist>,
 }
 
 /// A secret in the draft. Never the value: a masked preview and a
@@ -932,6 +942,206 @@ pub struct CompareEditsResponse {
     /// `None` when there is no model assistance; `unavailable` says why.
     pub comparison: Option<EditComparison>,
     pub unavailable: Option<AssistanceUnavailable>,
+    /// The beta's comparison of the same two drafts ([`BetaEditComparison`]),
+    /// when the active model carries [`BETA_FEEDBACK_CONTRACT`]; `None`
+    /// otherwise and from cores before the beta.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub beta: Option<BetaEditComparison>,
+}
+
+// ---------------------------------------------------------------------
+// Ticket quality beta (athenos-quality-beta-feedback-v1): "Athenos AI
+// Ticketqualität (Beta)", the model package 0.8.3-local-beta1. The
+// unchanged 0.8.1 graphs, then a deterministic overlay (title scope guard,
+// formal description failure, open implementation choices, unread
+// attachments, missing visual detail, open approval or scope choices) and
+// one tip per failed or open criterion. The field names are the package's
+// own (`quality/beta_adapter.py`, `quality/beta_assistance.py`); serde of
+// these types gives exactly its JSON (without `latency_ms`). The tips are
+// the package's German or English sentences, sent as they are, like the
+// writing assistance's. A local, supervised beta: `release_ready` is
+// false, a score never rejects a ticket, and `review` is an open question,
+// never a certain error.
+// ---------------------------------------------------------------------
+
+/// The beta's outer result contract ([`BetaQuality`]).
+pub const BETA_FEEDBACK_CONTRACT: &str = "athenos-quality-beta-feedback-v1";
+/// The beta's writing checklist and edit comparison
+/// ([`BetaWritingChecklist`], [`BetaEditComparison`]).
+pub const BETA_ASSISTANCE_CONTRACT: &str = "athenos-quality-beta-assistance-v1";
+/// [`BetaCriterion::decision_source`] when no overlay rule decided: the
+/// 0.8.1 graphs' verdict.
+pub const BETA_MODEL_DECISION: &str = "onnx_0.8.1";
+
+wire_enum! {
+    /// A criterion's state in the beta's outer contract.
+    BetaCriterionState {
+        Pass = "pass",
+        Fail = "fail",
+        /// The model is not sure, or an overlay rule found an open
+        /// question: shown as a question, never as a certain error.
+        Review = "review",
+        NotApplicable = "not_applicable",
+    }
+}
+
+wire_enum! {
+    /// What the beta's writing checklist found.
+    BetaChecklistState {
+        /// At least one criterion fails: there are improvements.
+        NeedsDetails = "needs_details",
+        /// No failure, but open questions.
+        Review = "review",
+        /// Nothing flagged, which is no approval.
+        NoFlags = "no_flags",
+        /// The text was truncated: no reliable rating, no lists.
+        Partial = "partial",
+    }
+}
+
+wire_enum! {
+    /// Why the beta does not compare two evaluations.
+    BetaComparisonReason {
+        /// Package version or policy differ.
+        EvaluationVersionChanged = "evaluation_version_changed",
+        TicketIdentityChanged = "ticket_identity_changed",
+        TicketTypeChanged = "ticket_type_changed",
+        /// Either text was truncated.
+        PartialInput = "partial_input",
+    }
+}
+
+/// One criterion of [`BetaQuality`], field for field as the package
+/// answers it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaCriterion {
+    pub id: QualityCriterion,
+    pub state: BetaCriterionState,
+    /// The policy weight (also for `not_applicable`).
+    pub weight: u8,
+    /// The 0.8.1 graphs' calibrated confidence; `None` when an overlay
+    /// rule decided.
+    pub confidence: Option<f64>,
+    /// [`BETA_MODEL_DECISION`], or the overlay rule that decided:
+    /// `generic_two_word_test`, `generic_short_improvement`,
+    /// `topic_only_short_title`, `formal_description_failure`,
+    /// `explicit_implementation_choice_open`, `decisive_attachment_unread`,
+    /// `visual_manifestation_explicitly_missing`,
+    /// `essential_choice_not_specified`, `approved_standard_defines_outcome`.
+    pub decision_source: String,
+    /// `pass`: the weight, `fail`: 0, otherwise `None` (not assessed).
+    pub points_earned: Option<u8>,
+    /// `None` for `not_applicable`, else the weight.
+    pub points_possible: Option<u8>,
+    /// `PASS`, `NOT_APPLICABLE`, or what the tip is about
+    /// (`TITLE_DATABASE_ROW_TEST_SCOPE`, `CONTEXT_STAGE_UNRESOLVED`, …).
+    pub reason_code: String,
+    /// The tip's theme (`title_specificity`, …); `None` without a tip.
+    pub tip_theme: Option<String>,
+    /// The package's German or English question; `None` for `pass` and
+    /// `not_applicable`.
+    pub tip: Option<String>,
+}
+
+/// The beta's evaluation of one draft (`BetaQualityModel.predict`
+/// without `latency_ms`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaQuality {
+    /// The ticket's id, when the check is about a saved one.
+    pub id: Option<String>,
+    /// `athenos-quality`.
+    pub model: String,
+    /// The package version (`0.8.3-local-beta1`).
+    pub version: String,
+    /// The unchanged graphs' version (`0.8.1-preview1`).
+    pub model_core_version: String,
+    /// [`BETA_FEEDBACK_CONTRACT`].
+    pub contract_version: String,
+    pub policy_version: String,
+    /// Always `false`: a supervised local beta.
+    pub release_ready: bool,
+    /// Always `true`.
+    pub local_beta: bool,
+    /// SHA-256 (hex) of the model input text (NFC, secrets masked): tips
+    /// belong to the draft with this fingerprint only.
+    pub input_fingerprint: String,
+    /// The text was cut: no reliable rating (no score, no range).
+    pub input_truncated: bool,
+    /// Always `false`: attachments are counted, never read.
+    pub attachment_contents_evaluated: bool,
+    /// The eight criteria in policy order.
+    pub criteria: Vec<BetaCriterion>,
+    /// Two decimals; only without review weight and without truncation.
+    pub score: Option<f64>,
+    /// "Mögliche Punktespanne": lowest and highest score once the open
+    /// questions are answered; `None` for a truncated text.
+    pub score_range: Option<[Option<f64>; 2]>,
+    pub earned_weight: u32,
+    pub possible_weight: u32,
+    pub review_weight: u32,
+    /// Always 0: no external model call.
+    pub model_calls: u32,
+    /// The graphs that ran (3).
+    pub onnx_graphs: u32,
+}
+
+/// One entry of [`BetaWritingChecklist`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaChecklistItem {
+    pub criterion_id: QualityCriterion,
+    pub weight: u8,
+    pub tip: Option<String>,
+    pub reason_code: String,
+    /// `None` when an overlay rule decided.
+    pub confidence: Option<f64>,
+}
+
+/// `writing_checklist` (contract [`BETA_ASSISTANCE_CONTRACT`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaWritingChecklist {
+    pub contract_version: String,
+    /// The package version.
+    pub model_version: String,
+    pub input_fingerprint: String,
+    pub state: BetaChecklistState,
+    pub score: Option<f64>,
+    pub score_range: Option<[Option<f64>; 2]>,
+    /// "Sicher fehlt": the failed criteria, heaviest first.
+    pub improvements: Vec<BetaChecklistItem>,
+    /// "Offene Fragen": the criteria under review, in policy order.
+    pub review_items: Vec<BetaChecklistItem>,
+    /// Why there is no rating (`partial` only).
+    pub notice: Option<String>,
+}
+
+/// A criterion whose beta state changed between two drafts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaCriterionChange {
+    pub criterion_id: QualityCriterion,
+    pub before: BetaCriterionState,
+    pub after: BetaCriterionState,
+}
+
+/// `compare_edits` of the beta (contract [`BETA_ASSISTANCE_CONTRACT`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct BetaEditComparison {
+    pub contract_version: String,
+    pub comparable: bool,
+    pub reason: Option<BetaComparisonReason>,
+    /// Empty unless comparable.
+    pub changes: Vec<BetaCriterionChange>,
+    /// After minus before, two decimals; only with two exact scores over
+    /// the same possible weight.
+    pub score_delta: Option<f64>,
+    pub before: BetaWritingChecklist,
+    pub after: BetaWritingChecklist,
 }
 
 /// `GET /work/workspaces/:workspace_id/projects/:project_id/quality-review`.
@@ -1296,6 +1506,9 @@ mod tests {
         assert_schema(ReviewEngine::ALL);
         assert_schema(TriageField::ALL);
         assert_schema(TriageReasonCode::ALL);
+        assert_schema(BetaCriterionState::ALL);
+        assert_schema(BetaChecklistState::ALL);
+        assert_schema(BetaComparisonReason::ALL);
     }
 
     #[test]
@@ -1431,6 +1644,70 @@ mod tests {
         }))
         .unwrap();
         assert!(older.assistance.is_none() && older.assistance_unavailable.is_none());
+    }
+
+    /// One golden criterion of the package (0.8.3-local-beta1, F07) and
+    /// its checklist round-trip exactly; older answers read without beta.
+    #[test]
+    fn the_beta_keeps_the_package_shape() {
+        let review = serde_json::json!({
+            "id": "context_sufficient", "state": "review", "weight": 2,
+            "confidence": 0.5891142756824641, "decision_source": "onnx_0.8.1",
+            "points_earned": null, "points_possible": 2,
+            "reason_code": "CONTEXT_STAGE_UNRESOLVED", "tip_theme": "context_open_choice",
+            "tip": "Welche Genehmigungsstufe gehört zu diesem Ticket?"
+        });
+        let back: BetaCriterion = serde_json::from_value(review.clone()).unwrap();
+        assert_eq!(back.state, BetaCriterionState::Review);
+        assert_eq!(serde_json::to_value(&back).unwrap(), review);
+        let quality = serde_json::json!({
+            "id": "F07", "model": "athenos-quality", "version": "0.8.3-local-beta1",
+            "model_core_version": "0.8.1-preview1", "contract_version": BETA_FEEDBACK_CONTRACT,
+            "policy_version": "quality-v1", "release_ready": false, "local_beta": true,
+            "input_fingerprint": "d696ef9af40be80f6f550a0c9f3ee0453f930faad95645581aecae91de3e0b69",
+            "input_truncated": false, "attachment_contents_evaluated": false,
+            "criteria": [review, {
+                "id": "completion_criteria", "state": "fail", "weight": 3, "confidence": null,
+                "decision_source": "essential_choice_not_specified", "points_earned": 0,
+                "points_possible": 3, "reason_code": "END_STATE_APPROVAL_STAGE_UNSET",
+                "tip_theme": "completion_choice",
+                "tip": "Welche Genehmigungsstufe soll abgedeckt werden, damit das fertige Ergebnis überprüfbar ist?"
+            }],
+            "score": null, "score_range": [66.67, 80.0], "earned_weight": 10,
+            "possible_weight": 15, "review_weight": 2, "model_calls": 0, "onnx_graphs": 3
+        });
+        let back: BetaQuality = serde_json::from_value(quality.clone()).unwrap();
+        assert_eq!(back.score_range, Some([Some(66.67), Some(80.0)]));
+        assert_eq!(serde_json::to_value(&back).unwrap(), quality);
+        let partial = serde_json::json!({
+            "contract_version": BETA_ASSISTANCE_CONTRACT, "model_version": "0.8.3-local-beta1",
+            "input_fingerprint": "x", "state": "partial", "score": null, "score_range": null,
+            "improvements": [], "review_items": [],
+            "notice": "Ticket text was truncated; edit it before relying on quality feedback."
+        });
+        let back: BetaWritingChecklist = serde_json::from_value(partial.clone()).unwrap();
+        assert_eq!(back.state, BetaChecklistState::Partial);
+        assert_eq!(serde_json::to_value(&back).unwrap(), partial);
+        let comparison = serde_json::json!({
+            "contract_version": BETA_ASSISTANCE_CONTRACT, "comparable": false,
+            "reason": "partial_input", "changes": [], "score_delta": null,
+            "before": partial.clone(), "after": partial
+        });
+        let back: BetaEditComparison = serde_json::from_value(comparison.clone()).unwrap();
+        assert_eq!(back.reason, Some(BetaComparisonReason::PartialInput));
+        assert_eq!(serde_json::to_value(&back).unwrap(), comparison);
+        // Answers of cores before the beta.
+        let older: QualityReport = serde_json::from_value(serde_json::json!({
+            "score": 10, "band": "thin", "hints": [], "metascore": null
+        }))
+        .unwrap();
+        assert!(older.beta.is_none() && older.beta_checklist.is_none());
+        let older: CompareEditsResponse = serde_json::from_value(
+            serde_json::json!({"comparison": null, "unavailable": "no_model"}),
+        )
+        .unwrap();
+        assert!(older.beta.is_none());
+        assert_eq!(BETA_MODEL_DECISION, "onnx_0.8.1");
     }
 
     #[test]

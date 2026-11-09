@@ -589,6 +589,16 @@ fn render(out: &Path) {
         ticket_check::CompareEditsResponse,
         ticket_check::BacklogReviewQuery,
         ticket_check::BacklogReviewPage,
+        // the quality beta's feedback and checklist (0.8.3-local-beta1)
+        ticket_check::BetaCriterionState,
+        ticket_check::BetaChecklistState,
+        ticket_check::BetaComparisonReason,
+        ticket_check::BetaCriterion,
+        ticket_check::BetaQuality,
+        ticket_check::BetaChecklistItem,
+        ticket_check::BetaWritingChecklist,
+        ticket_check::BetaCriterionChange,
+        ticket_check::BetaEditComparison,
         // remembered review, trend, asking the reporter (review2)
         ticket_check::BacklogReviewRunRequest,
         ticket_check::BacklogReviewLastQuery,

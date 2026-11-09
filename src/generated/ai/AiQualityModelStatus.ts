@@ -53,4 +53,16 @@ licenses: boolean,
 /**
  * The package's own `training_source` (`assistant_authored_compositional`).
  */
-training_source: string | null, };
+training_source: string | null, 
+/**
+ * A beta package's unchanged model core (`0.8.1-preview1` under
+ * `0.8.3-local-beta1`); `None` for any other package and from older
+ * cores. With a beta, `goldens_passed` / `goldens_total` count the
+ * beta's own golden cases too (410 base + 10 beta + 10 assistance).
+ */
+core_model_version?: string | null, 
+/**
+ * The beta's outer contract (`athenos-quality-beta-feedback-v1`);
+ * `None` without a beta. `contract_version` stays the core's.
+ */
+feedback_contract_version?: string | null, };

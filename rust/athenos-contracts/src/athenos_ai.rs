@@ -327,6 +327,18 @@ pub struct AiQualityModelStatus {
     pub licenses: bool,
     /// The package's own `training_source` (`assistant_authored_compositional`).
     pub training_source: Option<String>,
+    /// A beta package's unchanged model core (`0.8.1-preview1` under
+    /// `0.8.3-local-beta1`); `None` for any other package and from older
+    /// cores. With a beta, `goldens_passed` / `goldens_total` count the
+    /// beta's own golden cases too (410 base + 10 beta + 10 assistance).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub core_model_version: Option<String>,
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`);
+    /// `None` without a beta. `contract_version` stays the core's.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub feedback_contract_version: Option<String>,
 }
 
 /// The last check of one installed version (since this core started).
@@ -373,6 +385,20 @@ pub struct AiModelVersion {
     /// The selected version ([`AiModelStatus::selected_version`]).
     pub selected: bool,
     pub last_check: Option<AiModelCheck>,
+    /// A beta package's unchanged model core (`0.8.1-preview1`); `None`
+    /// for any other package.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub core_model_version: Option<String>,
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub feedback_contract_version: Option<String>,
+    /// "Athenos AI Ticketqualität (Beta)": a local, supervised beta test
+    /// (`release_ready` false); its tips never reject a ticket.
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub local_beta: bool,
 }
 
 /// A pick of the admin on its way in, or the last one that failed (the
@@ -430,6 +456,15 @@ pub struct AiWorkspaceModel {
     pub version: String,
     /// `release_ready` of the package.
     pub release_ready: bool,
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`);
+    /// `None` without a beta and from older cores.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub feedback_contract_version: Option<String>,
+    /// "Athenos AI Ticketqualität (Beta)": a local, supervised beta test.
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub local_beta: bool,
 }
 
 /// One licence file of the model package.
@@ -580,6 +615,34 @@ mod tests {
         );
         assert!(
             serde_json::from_str::<EnrollAiWorkspaceRequest>(r#"{"workspace_id":"x"}"#).is_err()
+        );
+    }
+
+    /// The beta's fields are additive: an older core's answers still read.
+    #[test]
+    fn beta_fields_default_for_older_cores() {
+        let model: AiWorkspaceModel =
+            serde_json::from_str(r#"{"version":"0.8.1-preview1","release_ready":false}"#).unwrap();
+        assert!(!model.local_beta && model.feedback_contract_version.is_none());
+        let version: AiModelVersion = serde_json::from_value(serde_json::json!({
+            "version": "0.8.1-preview1", "contract_version": "athenos-quality-hybrid-v1",
+            "supported": true, "problem": null, "problem_detail": null, "release_ready": false,
+            "size_bytes": 1, "licenses": true, "active": false, "selected": false,
+            "last_check": null
+        }))
+        .unwrap();
+        assert!(!version.local_beta && version.core_model_version.is_none());
+        let beta = AiWorkspaceModel {
+            version: "0.8.3-local-beta1".into(),
+            release_ready: false,
+            feedback_contract_version: Some("athenos-quality-beta-feedback-v1".into()),
+            local_beta: true,
+        };
+        let wire = serde_json::to_value(&beta).unwrap();
+        assert_eq!(wire["local_beta"], serde_json::json!(true));
+        assert_eq!(
+            serde_json::from_value::<AiWorkspaceModel>(wire).unwrap(),
+            beta
         );
     }
 }

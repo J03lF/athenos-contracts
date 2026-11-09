@@ -30,6 +30,15 @@ export type { BacklogReviewLast } from '../generated/intel/BacklogReviewLast';
 export type { BacklogReviewLastQuery } from '../generated/intel/BacklogReviewLastQuery';
 export type { BacklogReviewRunRequest } from '../generated/intel/BacklogReviewRunRequest';
 export type { BacklogReviewTrend } from '../generated/intel/BacklogReviewTrend';
+export type { BetaChecklistItem } from '../generated/intel/BetaChecklistItem';
+export type { BetaChecklistState } from '../generated/intel/BetaChecklistState';
+export type { BetaComparisonReason } from '../generated/intel/BetaComparisonReason';
+export type { BetaCriterion } from '../generated/intel/BetaCriterion';
+export type { BetaCriterionChange } from '../generated/intel/BetaCriterionChange';
+export type { BetaCriterionState } from '../generated/intel/BetaCriterionState';
+export type { BetaEditComparison } from '../generated/intel/BetaEditComparison';
+export type { BetaQuality } from '../generated/intel/BetaQuality';
+export type { BetaWritingChecklist } from '../generated/intel/BetaWritingChecklist';
 export type { ReviewCriterion } from '../generated/intel/ReviewCriterion';
 export type { ReviewTrendMark } from '../generated/intel/ReviewTrendMark';
 export type { ReviewTrendUnavailable } from '../generated/intel/ReviewTrendUnavailable';
@@ -81,3 +90,13 @@ export type { TriageSuggestion } from '../generated/intel/TriageSuggestion';
 export type { TriageTicketRef } from '../generated/intel/TriageTicketRef';
 export type { Verdict } from '../generated/intel/Verdict';
 export type { WritingAssistance } from '../generated/intel/WritingAssistance';
+
+/**
+ * "Athenos AI Ticketqualität (Beta)" (model package 0.8.3-local-beta1):
+ * the outer result contract of `QualityReport.beta`, the checklist and
+ * edit comparison contract, and `BetaCriterion.decision_source` when no
+ * overlay rule decided. The same values as the Rust constants.
+ */
+export const BETA_FEEDBACK_CONTRACT = 'athenos-quality-beta-feedback-v1';
+export const BETA_ASSISTANCE_CONTRACT = 'athenos-quality-beta-assistance-v1';
+export const BETA_MODEL_DECISION = 'onnx_0.8.1';
