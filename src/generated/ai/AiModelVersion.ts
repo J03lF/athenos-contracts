@@ -51,7 +51,8 @@ selected: boolean, last_check: AiModelCheck | null,
  */
 core_model_version?: string | null, 
 /**
- * The beta's outer contract (`athenos-quality-beta-feedback-v1`).
+ * The beta's outer contract (`athenos-quality-beta-feedback-v2`, or
+ * `-v1` for 0.8.3).
  */
 feedback_contract_version?: string | null, 
 /**

@@ -4,7 +4,7 @@ import type { BetaCriterionChange } from "./BetaCriterionChange";
 import type { BetaWritingChecklist } from "./BetaWritingChecklist";
 
 /**
- * `compare_edits` of the beta (contract [`BETA_ASSISTANCE_CONTRACT`]).
+ * `compare_edits` of the beta (one of [`BETA_ASSISTANCE_CONTRACTS`]).
  */
 export type BetaEditComparison = { contract_version: string, comparable: boolean, reason: BetaComparisonReason | null, 
 /**

@@ -951,25 +951,48 @@ pub struct CompareEditsResponse {
 }
 
 // ---------------------------------------------------------------------
-// Ticket quality beta (athenos-quality-beta-feedback-v1): "Athenos AI
-// Ticketqualität (Beta)", the model package 0.8.3-local-beta1. The
-// unchanged 0.8.1 graphs, then a deterministic overlay (title scope guard,
-// formal description failure, open implementation choices, unread
-// attachments, missing visual detail, open approval or scope choices) and
-// one tip per failed or open criterion. The field names are the package's
-// own (`quality/beta_adapter.py`, `quality/beta_assistance.py`); serde of
-// these types gives exactly its JSON (without `latency_ms`). The tips are
-// the package's German or English sentences, sent as they are, like the
-// writing assistance's. A local, supervised beta: `release_ready` is
-// false, a score never rejects a ticket, and `review` is an open question,
-// never a certain error.
+// Ticket quality beta (athenos-quality-beta-feedback-v1|v2): "Athenos AI
+// Ticketqualität (Beta)", the model packages 0.8.3-local-beta1 (v1) and
+// 0.8.4-local-beta1 (v2). The unchanged 0.8.1 graphs, then a deterministic
+// overlay (title scope guard, formal description failure, open
+// implementation choices, unread attachments, missing visual detail, an
+// explicitly unknown expected behaviour (v2), open approval or scope
+// choices) and one tip per failed or open criterion. v2 adds at most two
+// optional clarifying questions ("Athenos fragt nach",
+// [`ClarifyingQuestion`]) drawn from those failed or open criteria; they
+// change no score and need no further model call. The field names are the
+// package's own (`quality/beta_adapter.py`, `quality/beta_questions.py`,
+// `quality/beta_assistance.py`); serde of these types gives exactly the v2
+// JSON (without `latency_ms`), and a v1 answer or stored row reads with
+// no questions. The tips and questions are the package's German or English
+// sentences, sent as they are, like the writing assistance's. A local,
+// supervised beta: `release_ready` is false, a score never rejects a
+// ticket, `review` is an open question, never a certain error, and a
+// question never blocks submitting.
 // ---------------------------------------------------------------------
 
-/// The beta's outer result contract ([`BetaQuality`]).
-pub const BETA_FEEDBACK_CONTRACT: &str = "athenos-quality-beta-feedback-v1";
+/// The beta's outer result contract ([`BetaQuality`]) of the current
+/// package (0.8.4-local-beta1): with clarifying questions.
+pub const BETA_FEEDBACK_CONTRACT: &str = "athenos-quality-beta-feedback-v2";
+/// The outer result contract of 0.8.3-local-beta1, still read (a
+/// rollback to that package): no clarifying questions.
+pub const BETA_FEEDBACK_CONTRACT_V1: &str = "athenos-quality-beta-feedback-v1";
+/// Every outer result contract a core reads, newest first.
+pub const BETA_FEEDBACK_CONTRACTS: &[&str] = &[BETA_FEEDBACK_CONTRACT, BETA_FEEDBACK_CONTRACT_V1];
 /// The beta's writing checklist and edit comparison
-/// ([`BetaWritingChecklist`], [`BetaEditComparison`]).
-pub const BETA_ASSISTANCE_CONTRACT: &str = "athenos-quality-beta-assistance-v1";
+/// ([`BetaWritingChecklist`], [`BetaEditComparison`]) of the current
+/// package: the checklist carries the clarifying questions.
+pub const BETA_ASSISTANCE_CONTRACT: &str = "athenos-quality-beta-assistance-v2";
+/// The checklist contract of 0.8.3-local-beta1, still read.
+pub const BETA_ASSISTANCE_CONTRACT_V1: &str = "athenos-quality-beta-assistance-v1";
+/// Every checklist contract a core reads, newest first.
+pub const BETA_ASSISTANCE_CONTRACTS: &[&str] =
+    &[BETA_ASSISTANCE_CONTRACT, BETA_ASSISTANCE_CONTRACT_V1];
+/// [`BetaQuality::question_policy_version`] of a v2 result: how the
+/// clarifying questions are chosen (`quality/beta_questions.py`).
+pub const BETA_QUESTION_POLICY: &str = "athenos-clarifying-questions-v1";
+/// At most this many clarifying questions per evaluation.
+pub const BETA_MAX_CLARIFYING_QUESTIONS: usize = 2;
 /// [`BetaCriterion::decision_source`] when no overlay rule decided: the
 /// 0.8.1 graphs' verdict.
 pub const BETA_MODEL_DECISION: &str = "onnx_0.8.1";
@@ -1012,6 +1035,38 @@ wire_enum! {
     }
 }
 
+wire_enum! {
+    /// The criterion state a clarifying question comes from: only failed
+    /// or open criteria ask.
+    ClarifyingQuestionState {
+        Fail = "fail",
+        /// An open question, never a certain error.
+        Review = "review",
+    }
+}
+
+wire_enum! {
+    /// The visible ticket field a clarifying question is answered in: the
+    /// web focuses it, the answer is the ticket's own text.
+    ClarifyingQuestionTarget {
+        /// The question is about `title_informative`.
+        Title = "title",
+        /// Every other criterion.
+        Description = "description",
+    }
+}
+
+wire_enum! {
+    /// What decided the criterion a clarifying question comes from.
+    ClarifyingQuestionOrigin {
+        /// An overlay rule ([`BetaCriterion::decision_source`] is not
+        /// [`BETA_MODEL_DECISION`]).
+        FormalRule = "formal_rule",
+        /// The 0.8.1 graphs' verdict.
+        ModelVerdict = "model_verdict",
+    }
+}
+
 /// One criterion of [`BetaQuality`], field for field as the package
 /// answers it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
@@ -1029,6 +1084,8 @@ pub struct BetaCriterion {
     /// `topic_only_short_title`, `formal_description_failure`,
     /// `explicit_implementation_choice_open`, `decisive_attachment_unread`,
     /// `visual_manifestation_explicitly_missing`,
+    /// `expected_behavior_explicitly_missing` (v2: a bug whose expected
+    /// behaviour is explicitly unknown, `expected_actual` pass → review),
     /// `essential_choice_not_specified`, `approved_standard_defines_outcome`.
     pub decision_source: String,
     /// `pass`: the weight, `fail`: 0, otherwise `None` (not assessed).
@@ -1045,6 +1102,34 @@ pub struct BetaCriterion {
     pub tip: Option<String>,
 }
 
+/// One optional clarifying question of [`BetaQuality`] (v2, policy
+/// [`BETA_QUESTION_POLICY`]), field for field as the package answers it:
+/// drawn from a failed or open criterion, answered by the user in the
+/// visible `target_field`, never stored apart from the ticket and never a
+/// certain fact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "intel/")]
+pub struct ClarifyingQuestion {
+    /// `<criterion_id>:<reason_code>` (`context_sufficient:CONTEXT_STAGE_UNRESOLVED`).
+    pub id: String,
+    pub criterion_id: QualityCriterion,
+    /// The criterion's [`BetaCriterion::reason_code`]
+    /// (`TITLE_DATABASE_ROW_TEST_SCOPE`, `CONTEXT_STAGE_UNRESOLVED`,
+    /// `DESCRIPTION_FILLER`, …).
+    pub reason_code: String,
+    /// What the question is about; two questions never share one. Known:
+    /// `audience`, `period`, `approval_stage`, `scope`, `attachment_facts`,
+    /// otherwise the criterion's id (`title_informative`, …).
+    pub topic: String,
+    pub state: ClarifyingQuestionState,
+    /// The package's German or English question.
+    pub question: String,
+    pub target_field: ClarifyingQuestionTarget,
+    /// Always `true`: a question never blocks submitting.
+    pub optional: bool,
+    pub origin: ClarifyingQuestionOrigin,
+}
+
 /// The beta's evaluation of one draft (`BetaQualityModel.predict`
 /// without `latency_ms`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
@@ -1054,11 +1139,12 @@ pub struct BetaQuality {
     pub id: Option<String>,
     /// `athenos-quality`.
     pub model: String,
-    /// The package version (`0.8.3-local-beta1`).
+    /// The package version (`0.8.4-local-beta1`, `0.8.3-local-beta1`).
     pub version: String,
     /// The unchanged graphs' version (`0.8.1-preview1`).
     pub model_core_version: String,
-    /// [`BETA_FEEDBACK_CONTRACT`].
+    /// One of [`BETA_FEEDBACK_CONTRACTS`]: [`BETA_FEEDBACK_CONTRACT`]
+    /// (v2), or [`BETA_FEEDBACK_CONTRACT_V1`] (0.8.3, no questions).
     pub contract_version: String,
     pub policy_version: String,
     /// Always `false`: a supervised local beta.
@@ -1074,6 +1160,17 @@ pub struct BetaQuality {
     pub attachment_contents_evaluated: bool,
     /// The eight criteria in policy order.
     pub criteria: Vec<BetaCriterion>,
+    /// [`BETA_QUESTION_POLICY`] (v2); `None` for a v1 result and a row
+    /// stored before.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub question_policy_version: Option<String>,
+    /// "Athenos fragt nach": at most [`BETA_MAX_CLARIFYING_QUESTIONS`]
+    /// optional questions, in priority order (not criterion order). Empty
+    /// for a truncated text, without a fitting gap, and for a v1 result.
+    #[serde(default)]
+    #[schema(required = true)]
+    pub clarifying_questions: Vec<ClarifyingQuestion>,
     /// Two decimals; only without review weight and without truncation.
     pub score: Option<f64>,
     /// "Mögliche Punktespanne": lowest and highest score once the open
@@ -1100,7 +1197,7 @@ pub struct BetaChecklistItem {
     pub confidence: Option<f64>,
 }
 
-/// `writing_checklist` (contract [`BETA_ASSISTANCE_CONTRACT`]).
+/// `writing_checklist` (one of [`BETA_ASSISTANCE_CONTRACTS`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
 #[ts(export_to = "intel/")]
 pub struct BetaWritingChecklist {
@@ -1115,6 +1212,11 @@ pub struct BetaWritingChecklist {
     pub improvements: Vec<BetaChecklistItem>,
     /// "Offene Fragen": the criteria under review, in policy order.
     pub review_items: Vec<BetaChecklistItem>,
+    /// The same list as [`BetaQuality::clarifying_questions`] (v2); empty
+    /// for `partial`, a v1 checklist and a row stored before.
+    #[serde(default)]
+    #[schema(required = true)]
+    pub clarifying_questions: Vec<ClarifyingQuestion>,
     /// Why there is no rating (`partial` only).
     pub notice: Option<String>,
 }
@@ -1128,7 +1230,7 @@ pub struct BetaCriterionChange {
     pub after: BetaCriterionState,
 }
 
-/// `compare_edits` of the beta (contract [`BETA_ASSISTANCE_CONTRACT`]).
+/// `compare_edits` of the beta (one of [`BETA_ASSISTANCE_CONTRACTS`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
 #[ts(export_to = "intel/")]
 pub struct BetaEditComparison {
@@ -1509,6 +1611,9 @@ mod tests {
         assert_schema(BetaCriterionState::ALL);
         assert_schema(BetaChecklistState::ALL);
         assert_schema(BetaComparisonReason::ALL);
+        assert_schema(ClarifyingQuestionState::ALL);
+        assert_schema(ClarifyingQuestionTarget::ALL);
+        assert_schema(ClarifyingQuestionOrigin::ALL);
     }
 
     #[test]
@@ -1647,9 +1752,12 @@ mod tests {
     }
 
     /// One golden criterion of the package (0.8.3-local-beta1, F07) and
-    /// its checklist round-trip exactly; older answers read without beta.
+    /// its checklist read as they were (contract v1, no questions): the
+    /// question fields default, so a v1 answer and a stored row still
+    /// read, and write back as an empty list. Older answers read without
+    /// beta.
     #[test]
-    fn the_beta_keeps_the_package_shape() {
+    fn the_v1_beta_still_reads_without_questions() {
         let review = serde_json::json!({
             "id": "context_sufficient", "state": "review", "weight": 2,
             "confidence": 0.5891142756824641, "decision_source": "onnx_0.8.1",
@@ -1660,9 +1768,9 @@ mod tests {
         let back: BetaCriterion = serde_json::from_value(review.clone()).unwrap();
         assert_eq!(back.state, BetaCriterionState::Review);
         assert_eq!(serde_json::to_value(&back).unwrap(), review);
-        let quality = serde_json::json!({
+        let mut quality = serde_json::json!({
             "id": "F07", "model": "athenos-quality", "version": "0.8.3-local-beta1",
-            "model_core_version": "0.8.1-preview1", "contract_version": BETA_FEEDBACK_CONTRACT,
+            "model_core_version": "0.8.1-preview1", "contract_version": BETA_FEEDBACK_CONTRACT_V1,
             "policy_version": "quality-v1", "release_ready": false, "local_beta": true,
             "input_fingerprint": "d696ef9af40be80f6f550a0c9f3ee0453f930faad95645581aecae91de3e0b69",
             "input_truncated": false, "attachment_contents_evaluated": false,
@@ -1678,24 +1786,45 @@ mod tests {
         });
         let back: BetaQuality = serde_json::from_value(quality.clone()).unwrap();
         assert_eq!(back.score_range, Some([Some(66.67), Some(80.0)]));
+        assert!(back.question_policy_version.is_none() && back.clarifying_questions.is_empty());
+        quality["question_policy_version"] = serde_json::Value::Null;
+        quality["clarifying_questions"] = serde_json::json!([]);
         assert_eq!(serde_json::to_value(&back).unwrap(), quality);
-        let partial = serde_json::json!({
-            "contract_version": BETA_ASSISTANCE_CONTRACT, "model_version": "0.8.3-local-beta1",
+        let mut partial = serde_json::json!({
+            "contract_version": BETA_ASSISTANCE_CONTRACT_V1, "model_version": "0.8.3-local-beta1",
             "input_fingerprint": "x", "state": "partial", "score": null, "score_range": null,
             "improvements": [], "review_items": [],
             "notice": "Ticket text was truncated; edit it before relying on quality feedback."
         });
         let back: BetaWritingChecklist = serde_json::from_value(partial.clone()).unwrap();
         assert_eq!(back.state, BetaChecklistState::Partial);
-        assert_eq!(serde_json::to_value(&back).unwrap(), partial);
+        assert!(back.clarifying_questions.is_empty());
         let comparison = serde_json::json!({
-            "contract_version": BETA_ASSISTANCE_CONTRACT, "comparable": false,
+            "contract_version": BETA_ASSISTANCE_CONTRACT_V1, "comparable": false,
             "reason": "partial_input", "changes": [], "score_delta": null,
-            "before": partial.clone(), "after": partial
+            "before": partial.clone(), "after": partial.clone()
         });
-        let back: BetaEditComparison = serde_json::from_value(comparison.clone()).unwrap();
-        assert_eq!(back.reason, Some(BetaComparisonReason::PartialInput));
-        assert_eq!(serde_json::to_value(&back).unwrap(), comparison);
+        let back_comparison: BetaEditComparison =
+            serde_json::from_value(comparison.clone()).unwrap();
+        assert_eq!(
+            back_comparison.reason,
+            Some(BetaComparisonReason::PartialInput)
+        );
+        partial["clarifying_questions"] = serde_json::json!([]);
+        assert_eq!(serde_json::to_value(&back).unwrap(), partial);
+        assert_eq!(
+            serde_json::to_value(&back_comparison).unwrap()["after"],
+            partial
+        );
+        // A stored report of the v1 beta reads as well.
+        let stored: QualityReport = serde_json::from_value(serde_json::json!({
+            "score": 10, "band": "thin", "hints": [], "metascore": null,
+            "beta": quality, "beta_checklist": partial
+        }))
+        .unwrap();
+        assert!(stored
+            .beta
+            .is_some_and(|b| b.clarifying_questions.is_empty()));
         // Answers of cores before the beta.
         let older: QualityReport = serde_json::from_value(serde_json::json!({
             "score": 10, "band": "thin", "hints": [], "metascore": null
@@ -1708,6 +1837,165 @@ mod tests {
         .unwrap();
         assert!(older.beta.is_none());
         assert_eq!(BETA_MODEL_DECISION, "onnx_0.8.1");
+        assert_eq!(
+            BETA_FEEDBACK_CONTRACTS,
+            [
+                "athenos-quality-beta-feedback-v2",
+                "athenos-quality-beta-feedback-v1"
+            ]
+        );
+        assert_eq!(
+            BETA_ASSISTANCE_CONTRACTS,
+            [
+                "athenos-quality-beta-assistance-v2",
+                "athenos-quality-beta-assistance-v1"
+            ]
+        );
+    }
+
+    /// The golden result and checklist of 0.8.4-local-beta1 (F04: a fail
+    /// from a rule and an open model verdict, two questions in priority
+    /// order) round-trip exactly, every question field included.
+    #[test]
+    fn the_v2_beta_keeps_the_package_shape_with_questions() {
+        let questions = serde_json::json!([{
+            "id": "title_informative:TITLE_CHANGE_UNSPECIFIED",
+            "criterion_id": "title_informative", "reason_code": "TITLE_CHANGE_UNSPECIFIED",
+            "topic": "title_informative", "state": "fail",
+            "question": "Welche konkrete Änderung soll am genannten Bereich erfolgen?",
+            "target_field": "title", "optional": true, "origin": "formal_rule"
+        }, {
+            "id": "goal_clear:GOAL_CHANGE_UNSPECIFIED",
+            "criterion_id": "goal_clear", "reason_code": "GOAL_CHANGE_UNSPECIFIED",
+            "topic": "goal_clear", "state": "review",
+            "question": "Welche konkrete Änderung soll umgesetzt werden, statt nur allgemein zu verbessern?",
+            "target_field": "description", "optional": true, "origin": "model_verdict"
+        }]);
+        let quality = serde_json::json!({
+            "id": "F04", "model": "athenos-quality", "version": "0.8.4-local-beta1",
+            "model_core_version": "0.8.1-preview1", "contract_version": BETA_FEEDBACK_CONTRACT,
+            "policy_version": "quality-v1", "release_ready": false, "local_beta": true,
+            "input_fingerprint": "42604c8dfe92a7ac951be7b3349d1c91b2074c913759153c2f2d78e3609da063",
+            "input_truncated": false, "attachment_contents_evaluated": false,
+            "criteria": [{
+                "id": "title_informative", "state": "fail", "weight": 3, "confidence": null,
+                "decision_source": "generic_short_improvement", "points_earned": 0,
+                "points_possible": 3, "reason_code": "TITLE_CHANGE_UNSPECIFIED",
+                "tip_theme": "title_specificity",
+                "tip": "Welche konkrete Änderung soll am genannten Bereich erfolgen? Nenne sie im Titel."
+            }, {
+                "id": "description_informative", "state": "pass", "weight": 4,
+                "confidence": 0.7420192004404522, "decision_source": "onnx_0.8.1",
+                "points_earned": 4, "points_possible": 4, "reason_code": "PASS",
+                "tip_theme": null, "tip": null
+            }, {
+                "id": "goal_clear", "state": "review", "weight": 3,
+                "confidence": 0.5127480343139236, "decision_source": "onnx_0.8.1",
+                "points_earned": null, "points_possible": 3,
+                "reason_code": "GOAL_CHANGE_UNSPECIFIED", "tip_theme": "goal_outcome",
+                "tip": "Welche konkrete Änderung soll umgesetzt werden, statt nur allgemein zu verbessern?"
+            }, {
+                "id": "context_sufficient", "state": "pass", "weight": 2,
+                "confidence": 0.776473418031561, "decision_source": "onnx_0.8.1",
+                "points_earned": 2, "points_possible": 2, "reason_code": "PASS",
+                "tip_theme": null, "tip": null
+            }, {
+                "id": "reproduction_sufficient", "state": "not_applicable", "weight": 3,
+                "confidence": 0.6061386898569743, "decision_source": "onnx_0.8.1",
+                "points_earned": null, "points_possible": null, "reason_code": "NOT_APPLICABLE",
+                "tip_theme": null, "tip": null
+            }, {
+                "id": "expected_actual", "state": "not_applicable", "weight": 3,
+                "confidence": 0.876628661539654, "decision_source": "onnx_0.8.1",
+                "points_earned": null, "points_possible": null, "reason_code": "NOT_APPLICABLE",
+                "tip_theme": null, "tip": null
+            }, {
+                "id": "completion_criteria", "state": "fail", "weight": 3,
+                "confidence": 0.9917292986547224, "decision_source": "onnx_0.8.1",
+                "points_earned": 0, "points_possible": 3, "reason_code": "END_STATE_UNCHECKABLE",
+                "tip_theme": "completion_condition",
+                "tip": "Welcher konkrete Zustand muss am Ende überprüfbar erreicht sein?"
+            }, {
+                "id": "evidence_sufficient", "state": "not_applicable", "weight": 1,
+                "confidence": 0.9998654586548928, "decision_source": "onnx_0.8.1",
+                "points_earned": null, "points_possible": null, "reason_code": "NOT_APPLICABLE",
+                "tip_theme": null, "tip": null
+            }],
+            "question_policy_version": BETA_QUESTION_POLICY,
+            "clarifying_questions": questions.clone(),
+            "score": null, "score_range": [40.0, 60.0], "earned_weight": 6,
+            "possible_weight": 15, "review_weight": 3, "model_calls": 0, "onnx_graphs": 3
+        });
+        let back: BetaQuality = serde_json::from_value(quality.clone()).unwrap();
+        assert_eq!(
+            back.question_policy_version.as_deref(),
+            Some(BETA_QUESTION_POLICY)
+        );
+        assert!(back.clarifying_questions.len() <= BETA_MAX_CLARIFYING_QUESTIONS);
+        let first = &back.clarifying_questions[0];
+        assert_eq!(first.criterion_id, QualityCriterion::TitleInformative);
+        assert_eq!(first.state, ClarifyingQuestionState::Fail);
+        assert_eq!(first.target_field, ClarifyingQuestionTarget::Title);
+        assert_eq!(first.origin, ClarifyingQuestionOrigin::FormalRule);
+        assert!(first.optional);
+        let second = &back.clarifying_questions[1];
+        assert_eq!(second.state, ClarifyingQuestionState::Review);
+        assert_eq!(second.target_field, ClarifyingQuestionTarget::Description);
+        assert_eq!(second.origin, ClarifyingQuestionOrigin::ModelVerdict);
+        assert_eq!(
+            back.criteria[0].decision_source, "generic_short_improvement",
+            "a rule's fail asks as formal_rule"
+        );
+        assert_eq!(serde_json::to_value(&back).unwrap(), quality);
+        let checklist = serde_json::json!({
+            "contract_version": BETA_ASSISTANCE_CONTRACT, "model_version": "0.8.4-local-beta1",
+            "input_fingerprint": "42604c8dfe92a7ac951be7b3349d1c91b2074c913759153c2f2d78e3609da063",
+            "state": "needs_details", "score": null, "score_range": [40.0, 60.0],
+            "improvements": [{
+                "criterion_id": "title_informative", "weight": 3,
+                "tip": "Welche konkrete Änderung soll am genannten Bereich erfolgen? Nenne sie im Titel.",
+                "reason_code": "TITLE_CHANGE_UNSPECIFIED", "confidence": null
+            }, {
+                "criterion_id": "completion_criteria", "weight": 3,
+                "tip": "Welcher konkrete Zustand muss am Ende überprüfbar erreicht sein?",
+                "reason_code": "END_STATE_UNCHECKABLE", "confidence": 0.9917292986547224
+            }],
+            "review_items": [{
+                "criterion_id": "goal_clear", "weight": 3,
+                "tip": "Welche konkrete Änderung soll umgesetzt werden, statt nur allgemein zu verbessern?",
+                "reason_code": "GOAL_CHANGE_UNSPECIFIED", "confidence": 0.5127480343139236
+            }],
+            "clarifying_questions": questions, "notice": null
+        });
+        let back_checklist: BetaWritingChecklist =
+            serde_json::from_value(checklist.clone()).unwrap();
+        assert_eq!(
+            back_checklist.clarifying_questions,
+            back.clarifying_questions
+        );
+        assert_eq!(serde_json::to_value(&back_checklist).unwrap(), checklist);
+        // A truncated text: no questions, an empty policy-versioned list.
+        let partial = serde_json::json!({
+            "contract_version": BETA_ASSISTANCE_CONTRACT, "model_version": "0.8.4-local-beta1",
+            "input_fingerprint": "x", "state": "partial", "score": null, "score_range": null,
+            "improvements": [], "review_items": [], "clarifying_questions": [],
+            "notice": "Ticket text was truncated; edit it before relying on quality feedback."
+        });
+        let back: BetaWritingChecklist = serde_json::from_value(partial.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&back).unwrap(), partial);
+        // Only the documented values of the closed fields read.
+        for (field, value) in [
+            ("state", "pass"),
+            ("target_field", "goal"),
+            ("origin", "onnx_0.8.1"),
+        ] {
+            let mut wrong = checklist["clarifying_questions"][0].clone();
+            wrong[field] = serde_json::json!(value);
+            assert!(
+                serde_json::from_value::<ClarifyingQuestion>(wrong).is_err(),
+                "{field}={value}"
+            );
+        }
     }
 
     #[test]

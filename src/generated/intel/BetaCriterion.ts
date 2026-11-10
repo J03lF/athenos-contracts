@@ -22,6 +22,8 @@ confidence: number | null,
  * `topic_only_short_title`, `formal_description_failure`,
  * `explicit_implementation_choice_open`, `decisive_attachment_unread`,
  * `visual_manifestation_explicitly_missing`,
+ * `expected_behavior_explicitly_missing` (v2: a bug whose expected
+ * behaviour is explicitly unknown, `expected_actual` pass → review),
  * `essential_choice_not_specified`, `approved_standard_defines_outcome`.
  */
 decision_source: string, 

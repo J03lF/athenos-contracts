@@ -328,14 +328,16 @@ pub struct AiQualityModelStatus {
     /// The package's own `training_source` (`assistant_authored_compositional`).
     pub training_source: Option<String>,
     /// A beta package's unchanged model core (`0.8.1-preview1` under
-    /// `0.8.3-local-beta1`); `None` for any other package and from older
-    /// cores. With a beta, `goldens_passed` / `goldens_total` count the
-    /// beta's own golden cases too (410 base + 10 beta + 10 assistance).
+    /// `0.8.4-local-beta1` and `0.8.3-local-beta1`); `None` for any other
+    /// package and from older cores. With a beta, `goldens_passed` /
+    /// `goldens_total` count the beta's own golden cases too (410 base +
+    /// 10 beta + 10 assistance).
     #[serde(default)]
     #[ts(optional = nullable)]
     pub core_model_version: Option<String>,
-    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`);
-    /// `None` without a beta. `contract_version` stays the core's.
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v2`, or
+    /// `-v1` for 0.8.3); `None` without a beta. `contract_version` stays
+    /// the core's.
     #[serde(default)]
     #[ts(optional = nullable)]
     pub feedback_contract_version: Option<String>,
@@ -390,7 +392,8 @@ pub struct AiModelVersion {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub core_model_version: Option<String>,
-    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`).
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v2`, or
+    /// `-v1` for 0.8.3).
     #[serde(default)]
     #[ts(optional = nullable)]
     pub feedback_contract_version: Option<String>,
@@ -457,13 +460,13 @@ pub struct AiWorkspaceModel {
     /// `release_ready` of the package.
     pub release_ready: bool,
     /// The model core the active beta overlays, unchanged (`0.8.1-preview1`
-    /// under `0.8.3-local-beta1`): the `model_version` a review the beta
+    /// under `0.8.4-local-beta1`): the `model_version` a review the beta
     /// rated is stored with. `None` without a beta and from older cores.
     #[serde(default)]
     #[ts(optional = nullable)]
     pub core_model_version: Option<String>,
-    /// The beta's outer contract (`athenos-quality-beta-feedback-v1`);
-    /// `None` without a beta and from older cores.
+    /// The beta's outer contract (`athenos-quality-beta-feedback-v2`, or
+    /// `-v1` for 0.8.3); `None` without a beta and from older cores.
     #[serde(default)]
     #[ts(optional = nullable)]
     pub feedback_contract_version: Option<String>,

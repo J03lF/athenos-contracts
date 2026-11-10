@@ -39,6 +39,10 @@ export type { BetaCriterionState } from '../generated/intel/BetaCriterionState';
 export type { BetaEditComparison } from '../generated/intel/BetaEditComparison';
 export type { BetaQuality } from '../generated/intel/BetaQuality';
 export type { BetaWritingChecklist } from '../generated/intel/BetaWritingChecklist';
+export type { ClarifyingQuestion } from '../generated/intel/ClarifyingQuestion';
+export type { ClarifyingQuestionOrigin } from '../generated/intel/ClarifyingQuestionOrigin';
+export type { ClarifyingQuestionState } from '../generated/intel/ClarifyingQuestionState';
+export type { ClarifyingQuestionTarget } from '../generated/intel/ClarifyingQuestionTarget';
 export type { ReviewCriterion } from '../generated/intel/ReviewCriterion';
 export type { ReviewTrendMark } from '../generated/intel/ReviewTrendMark';
 export type { ReviewTrendUnavailable } from '../generated/intel/ReviewTrendUnavailable';
@@ -92,11 +96,27 @@ export type { Verdict } from '../generated/intel/Verdict';
 export type { WritingAssistance } from '../generated/intel/WritingAssistance';
 
 /**
- * "Athenos AI Ticketqualität (Beta)" (model package 0.8.3-local-beta1):
- * the outer result contract of `QualityReport.beta`, the checklist and
- * edit comparison contract, and `BetaCriterion.decision_source` when no
- * overlay rule decided. The same values as the Rust constants.
+ * "Athenos AI Ticketqualität (Beta)": the outer result contract of
+ * `QualityReport.beta` and the checklist and edit comparison contract of
+ * the current package (0.8.4-local-beta1, v2: with clarifying questions),
+ * the v1 contracts of 0.8.3-local-beta1 that are still read (no
+ * questions), every contract read (newest first),
+ * `BetaCriterion.decision_source` when no overlay rule decided, the
+ * question policy of a v2 result and its question limit. The same values
+ * as the Rust constants.
  */
-export const BETA_FEEDBACK_CONTRACT = 'athenos-quality-beta-feedback-v1';
-export const BETA_ASSISTANCE_CONTRACT = 'athenos-quality-beta-assistance-v1';
+export const BETA_FEEDBACK_CONTRACT = 'athenos-quality-beta-feedback-v2';
+export const BETA_FEEDBACK_CONTRACT_V1 = 'athenos-quality-beta-feedback-v1';
+export const BETA_FEEDBACK_CONTRACTS: readonly string[] = [
+  BETA_FEEDBACK_CONTRACT,
+  BETA_FEEDBACK_CONTRACT_V1,
+];
+export const BETA_ASSISTANCE_CONTRACT = 'athenos-quality-beta-assistance-v2';
+export const BETA_ASSISTANCE_CONTRACT_V1 = 'athenos-quality-beta-assistance-v1';
+export const BETA_ASSISTANCE_CONTRACTS: readonly string[] = [
+  BETA_ASSISTANCE_CONTRACT,
+  BETA_ASSISTANCE_CONTRACT_V1,
+];
 export const BETA_MODEL_DECISION = 'onnx_0.8.1';
+export const BETA_QUESTION_POLICY = 'athenos-clarifying-questions-v1';
+export const BETA_MAX_CLARIFYING_QUESTIONS = 2;
