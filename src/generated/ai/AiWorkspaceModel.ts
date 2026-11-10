@@ -13,6 +13,12 @@ version: string,
  */
 release_ready: boolean, 
 /**
+ * The model core the active beta overlays, unchanged (`0.8.1-preview1`
+ * under `0.8.3-local-beta1`): the `model_version` a review the beta
+ * rated is stored with. `None` without a beta and from older cores.
+ */
+core_model_version?: string | null, 
+/**
  * The beta's outer contract (`athenos-quality-beta-feedback-v1`);
  * `None` without a beta and from older cores.
  */

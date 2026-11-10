@@ -456,6 +456,12 @@ pub struct AiWorkspaceModel {
     pub version: String,
     /// `release_ready` of the package.
     pub release_ready: bool,
+    /// The model core the active beta overlays, unchanged (`0.8.1-preview1`
+    /// under `0.8.3-local-beta1`): the `model_version` a review the beta
+    /// rated is stored with. `None` without a beta and from older cores.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub core_model_version: Option<String>,
     /// The beta's outer contract (`athenos-quality-beta-feedback-v1`);
     /// `None` without a beta and from older cores.
     #[serde(default)]
@@ -624,6 +630,7 @@ mod tests {
         let model: AiWorkspaceModel =
             serde_json::from_str(r#"{"version":"0.8.1-preview1","release_ready":false}"#).unwrap();
         assert!(!model.local_beta && model.feedback_contract_version.is_none());
+        assert!(model.core_model_version.is_none());
         let version: AiModelVersion = serde_json::from_value(serde_json::json!({
             "version": "0.8.1-preview1", "contract_version": "athenos-quality-hybrid-v1",
             "supported": true, "problem": null, "problem_detail": null, "release_ready": false,
@@ -635,11 +642,16 @@ mod tests {
         let beta = AiWorkspaceModel {
             version: "0.8.3-local-beta1".into(),
             release_ready: false,
+            core_model_version: Some("0.8.1-preview1".into()),
             feedback_contract_version: Some("athenos-quality-beta-feedback-v1".into()),
             local_beta: true,
         };
         let wire = serde_json::to_value(&beta).unwrap();
         assert_eq!(wire["local_beta"], serde_json::json!(true));
+        assert_eq!(
+            wire["core_model_version"],
+            serde_json::json!("0.8.1-preview1")
+        );
         assert_eq!(
             serde_json::from_value::<AiWorkspaceModel>(wire).unwrap(),
             beta
