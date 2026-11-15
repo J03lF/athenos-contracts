@@ -35,9 +35,17 @@ metascore: MetaScore | null,
 assistance?: WritingAssistance | null, 
 /**
  * Why there is no assistance (`None` when there is one, and from
- * cores before the assistance).
+ * cores before the assistance); `no_model` for a model that is still
+ * starting ([`AssistanceUnavailable`]).
  */
 assistance_unavailable?: AssistanceUnavailable | null, 
+/**
+ * [`Self::assistance_unavailable`], exact (K4): the same value, but
+ * `model_starting` for a model that is still starting. `None` when
+ * there is assistance, and from cores without it (v0.13.0-12 and
+ * older: then read `assistance_unavailable`).
+ */
+assistance_unavailable_reason?: AssistanceUnavailable | null, 
 /**
  * "Athenos AI Ticketqualität (Beta)": the beta's evaluation, when the
  * active model carries [`BETA_FEEDBACK_CONTRACT`] (through the same

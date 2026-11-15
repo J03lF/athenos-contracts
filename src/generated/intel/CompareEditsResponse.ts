@@ -7,7 +7,17 @@ export type CompareEditsResponse = {
 /**
  * `None` when there is no model assistance; `unavailable` says why.
  */
-comparison: EditComparison | null, unavailable: AssistanceUnavailable | null, 
+comparison: EditComparison | null, 
+/**
+ * `no_model` for a model that is still starting ([`AssistanceUnavailable`]).
+ */
+unavailable: AssistanceUnavailable | null, 
+/**
+ * [`Self::unavailable`], exact (K4): `model_starting` for a model that
+ * is still starting. `None` from cores of v0.13.0-12 and older (then
+ * read `unavailable`).
+ */
+unavailable_reason?: AssistanceUnavailable | null, 
 /**
  * The beta's comparison of the same two drafts ([`BetaEditComparison`]),
  * when the active model carries [`BETA_FEEDBACK_CONTRACT`]; `None`

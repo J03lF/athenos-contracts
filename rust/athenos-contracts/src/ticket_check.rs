@@ -501,10 +501,18 @@ pub struct QualityReport {
     #[ts(optional = nullable)]
     pub assistance: Option<WritingAssistance>,
     /// Why there is no assistance (`None` when there is one, and from
-    /// cores before the assistance).
+    /// cores before the assistance); `no_model` for a model that is still
+    /// starting ([`AssistanceUnavailable`]).
     #[serde(default)]
     #[ts(optional = nullable)]
     pub assistance_unavailable: Option<AssistanceUnavailable>,
+    /// [`Self::assistance_unavailable`], exact (K4): the same value, but
+    /// `model_starting` for a model that is still starting. `None` when
+    /// there is assistance, and from cores without it (v0.13.0-12 and
+    /// older: then read `assistance_unavailable`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub assistance_unavailable_reason: Option<AssistanceUnavailable>,
     /// "Athenos AI Ticketqualität (Beta)": the beta's evaluation, when the
     /// active model carries [`BETA_FEEDBACK_CONTRACT`] (through the same
     /// gates as the assistance); `None` otherwise and from older cores.
@@ -798,17 +806,37 @@ wire_enum! {
 
 wire_enum! {
     /// Why a check or a review has no model assistance.
+    ///
+    /// Two fields carry it (K4, from the core after v0.13.0-12): the old one
+    /// (`QualityReport::assistance_unavailable`, `unavailable` of
+    /// [`CompareEditsResponse`] and [`BacklogReviewPage`]) and the exact one
+    /// beside it (`…_reason`). They differ only for a model that is still
+    /// starting: `no_model` in the old field, which webs that read only it
+    /// (v0.13.0-19 and the wave-1 release) draw as "Athenos AI startet …"
+    /// (any value they do not know reads "bewertet gerade nicht"), and
+    /// [`Self::ModelStarting`] in the exact one. Read the exact field first;
+    /// a core of v0.13.0-12 or older sends only the old one.
     AssistanceUnavailable {
-        /// The workspace chose "Nur Regeln".
+        /// The workspace chose "Nur Regeln", or the platform's model is off.
         RulesOnly = "rules_only",
-        /// No model is active (off, not installed, being checked).
+        /// The old field's value for a model that is still starting (the
+        /// exact field says [`Self::ModelStarting`]). From cores of
+        /// v0.13.0-12 and older: no model is active (not installed, being
+        /// checked, a failed activation), all alike.
         NoModel = "no_model",
         /// The active model has no `athenos-quality-assistance-v1`.
         ModelWithoutAssistance = "model_without_assistance",
         /// The ticket's type is none of the model's four.
         TypeNotSupported = "type_not_supported",
-        /// The inference failed or timed out.
+        /// The inference failed or timed out; or no model answers and none
+        /// is coming up (its activation failed, the chosen version is not
+        /// installed, no models directory).
         Failed = "failed",
+        /// The exact field only (additive, K4): Athenos AI rates here and
+        /// its model is still coming up (the check after a start, or an
+        /// admin's switch to another version, about 4 minutes); the old
+        /// field says `no_model` meanwhile.
+        ModelStarting = "model_starting",
     }
 }
 
@@ -941,7 +969,14 @@ pub struct EditComparison {
 pub struct CompareEditsResponse {
     /// `None` when there is no model assistance; `unavailable` says why.
     pub comparison: Option<EditComparison>,
+    /// `no_model` for a model that is still starting ([`AssistanceUnavailable`]).
     pub unavailable: Option<AssistanceUnavailable>,
+    /// [`Self::unavailable`], exact (K4): `model_starting` for a model that
+    /// is still starting. `None` from cores of v0.13.0-12 and older (then
+    /// read `unavailable`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub unavailable_reason: Option<AssistanceUnavailable>,
     /// The beta's comparison of the same two drafts ([`BetaEditComparison`]),
     /// when the active model carries [`BETA_FEEDBACK_CONTRACT`]; `None`
     /// otherwise and from cores before the beta.
@@ -1318,6 +1353,16 @@ pub struct BacklogReviewItem {
     /// moved since then.
     #[serde(default)]
     pub trend: Option<ReviewTrendMark>,
+    /// A beta's row (AI-1, from the core after v0.13.0-12): "Athenos fragt
+    /// nach", the same optional questions the ticket's check asks for this
+    /// text ([`BetaWritingChecklist::clarifying_questions`], at most
+    /// [`BETA_MAX_CLARIFYING_QUESTIONS`], in priority order). Empty for a
+    /// rules or base model row, a partial one, a v1 beta (0.8.3), and in a
+    /// stored review (`quality-review/last`: no ticket text is stored);
+    /// absent from older cores.
+    #[serde(default)]
+    #[ts(as = "Option<Vec<ClarifyingQuestion>>", optional)]
+    pub clarifying_questions: Vec<ClarifyingQuestion>,
 }
 
 /// One applicable criterion of a review row.
@@ -1381,9 +1426,19 @@ pub struct BacklogReviewPage {
     /// Who evaluated the page: `assistance` (model rows, plus rule rows
     /// for types the model does not read) or `rules` throughout.
     pub engine: ReviewEngine,
-    /// Why the page is rules only (`None` with the model).
+    /// Why the page is rules only (`None` with the model); `no_model` for a
+    /// model that is still starting ([`AssistanceUnavailable`]).
     pub unavailable: Option<AssistanceUnavailable>,
-    /// `athenos-quality-assistance-v1` with the model, else `None`.
+    /// [`Self::unavailable`], exact (K4): `model_starting` for a model that
+    /// is still starting. `None` with the model, and from cores of
+    /// v0.13.0-12 and older (then read `unavailable`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub unavailable_reason: Option<AssistanceUnavailable>,
+    /// The rows' contract: `athenos-quality-assistance-v1` with the model;
+    /// with a quality beta (AI-1, from the core after v0.13.0-12) its
+    /// writing checklist's ([`BETA_ASSISTANCE_CONTRACTS`]: the rows are the
+    /// beta's rating, as the ticket's check shows it); `None` for the rules.
     pub contract_version: Option<String>,
     pub model_version: Option<String>,
     pub policy_version: Option<String>,
@@ -2041,5 +2096,65 @@ mod tests {
         }))
         .unwrap();
         assert!(older.criteria.is_empty() && !older.changed_since && older.trend.is_none());
+        assert!(older.clarifying_questions.is_empty());
+    }
+
+    /// K4 and AI-1 are additive: `model_starting` is a value of its own,
+    /// the exact reasons and a backlog row's questions default when an
+    /// older core leaves them out, and a new answer still carries the old
+    /// field the webs of v0.13.0-19 and the wave-1 release read.
+    #[test]
+    fn the_exact_reason_and_the_rows_questions_are_additive() {
+        assert_eq!(
+            AssistanceUnavailable::parse("model_starting"),
+            Some(AssistanceUnavailable::ModelStarting)
+        );
+        assert_eq!(AssistanceUnavailable::ALL.len(), 6);
+        assert_eq!(
+            AssistanceUnavailable::ALL.last(),
+            Some(&AssistanceUnavailable::ModelStarting),
+            "appended: the older values keep their place"
+        );
+        // Answers of cores of v0.13.0-12 and older.
+        let older: QualityReport = serde_json::from_value(serde_json::json!({
+            "score": 10, "band": "thin", "hints": [], "metascore": null,
+            "assistance_unavailable": "no_model"
+        }))
+        .unwrap();
+        assert_eq!(
+            older.assistance_unavailable,
+            Some(AssistanceUnavailable::NoModel)
+        );
+        assert_eq!(older.assistance_unavailable_reason, None);
+        let older: CompareEditsResponse = serde_json::from_value(
+            serde_json::json!({"comparison": null, "unavailable": "no_model"}),
+        )
+        .unwrap();
+        assert_eq!(older.unavailable_reason, None);
+        // A new answer while the model starts: both fields.
+        let starting = CompareEditsResponse {
+            comparison: None,
+            unavailable: Some(AssistanceUnavailable::NoModel),
+            unavailable_reason: Some(AssistanceUnavailable::ModelStarting),
+            beta: None,
+        };
+        let wire = serde_json::to_value(&starting).unwrap();
+        assert_eq!(wire["unavailable"], "no_model");
+        assert_eq!(wire["unavailable_reason"], "model_starting");
+        assert_eq!(
+            serde_json::from_value::<CompareEditsResponse>(wire).unwrap(),
+            starting
+        );
+        let page: BacklogReviewPage = serde_json::from_value(serde_json::json!({
+            "engine": "rules", "unavailable": "failed", "contract_version": null,
+            "model_version": null, "policy_version": null, "total_open": 0, "offset": 0,
+            "limit": 25, "tickets": 0,
+            "counts": {"needs_details": 0, "uncertain": 0, "partial": 0, "no_flags": 0},
+            "ordering": "o",
+            "groups": {"needs_details": [], "uncertain": [], "partial": [], "no_flags": []}
+        }))
+        .unwrap();
+        assert_eq!(page.unavailable_reason, None);
+        assert_eq!(page.unavailable, Some(AssistanceUnavailable::Failed));
     }
 }

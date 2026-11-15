@@ -15,11 +15,21 @@ export type BacklogReviewPage = {
  */
 engine: ReviewEngine, 
 /**
- * Why the page is rules only (`None` with the model).
+ * Why the page is rules only (`None` with the model); `no_model` for a
+ * model that is still starting ([`AssistanceUnavailable`]).
  */
 unavailable: AssistanceUnavailable | null, 
 /**
- * `athenos-quality-assistance-v1` with the model, else `None`.
+ * [`Self::unavailable`], exact (K4): `model_starting` for a model that
+ * is still starting. `None` with the model, and from cores of
+ * v0.13.0-12 and older (then read `unavailable`).
+ */
+unavailable_reason?: AssistanceUnavailable | null, 
+/**
+ * The rows' contract: `athenos-quality-assistance-v1` with the model;
+ * with a quality beta (AI-1, from the core after v0.13.0-12) its
+ * writing checklist's ([`BETA_ASSISTANCE_CONTRACTS`]: the rows are the
+ * beta's rating, as the ticket's check shows it); `None` for the rules.
  */
 contract_version: string | null, model_version: string | null, policy_version: string | null, 
 /**

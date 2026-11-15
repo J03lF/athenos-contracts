@@ -2,5 +2,15 @@
 
 /**
  * Why a check or a review has no model assistance.
+ *
+ * Two fields carry it (K4, from the core after v0.13.0-12): the old one
+ * (`QualityReport::assistance_unavailable`, `unavailable` of
+ * [`CompareEditsResponse`] and [`BacklogReviewPage`]) and the exact one
+ * beside it (`…_reason`). They differ only for a model that is still
+ * starting: `no_model` in the old field, which webs that read only it
+ * (v0.13.0-19 and the wave-1 release) draw as "Athenos AI startet …"
+ * (any value they do not know reads "bewertet gerade nicht"), and
+ * [`Self::ModelStarting`] in the exact one. Read the exact field first;
+ * a core of v0.13.0-12 or older sends only the old one.
  */
-export type AssistanceUnavailable = "rules_only" | "no_model" | "model_without_assistance" | "type_not_supported" | "failed";
+export type AssistanceUnavailable = "rules_only" | "no_model" | "model_without_assistance" | "type_not_supported" | "failed" | "model_starting";
