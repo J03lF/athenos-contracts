@@ -15,4 +15,5 @@ export type { ExportedWorkspace } from '../generated/account/ExportedWorkspace';
 export type { ExportedTicket } from '../generated/account/ExportedTicket';
 export type { ExportedComment } from '../generated/account/ExportedComment';
 export type { ExportedWorkLog } from '../generated/account/ExportedWorkLog';
+export type { ExportedProfilePicture } from '../generated/account/ExportedProfilePicture';
 export type { AccountExport } from '../generated/account/AccountExport';

@@ -35,4 +35,9 @@ display_name: string | null, email: string | null,
  * Every workspace role the member holds (W4-G), by position. Owners
  * and admins hold their base level, and roles only for queues.
  */
-roles: Array<MemberRoleRef>, };
+roles: Array<MemberRoleRef>, 
+/**
+ * The member's profile picture (`UserProfileResponse::avatar_url`'s
+ * form); absent without one (pp1).
+ */
+avatar_url?: string, };

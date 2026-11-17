@@ -377,6 +377,11 @@ pub struct WorkspaceMemberResponse {
     /// and admins hold their base level, and roles only for queues.
     #[serde(default)]
     pub roles: Vec<crate::roles::MemberRoleRef>,
+    /// The member's profile picture (`UserProfileResponse::avatar_url`'s
+    /// form); absent without one (pp1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, TS)]
@@ -552,6 +557,35 @@ mod tests {
         assert_eq!(
             serde_json::to_value(DefaultAssignee::Nobody).expect("assignee"),
             json!("none")
+        );
+    }
+
+    #[test]
+    fn an_absent_avatar_stays_absent() {
+        // A roster row from before pp1 has no `avatar_url`.
+        let row = json!({
+            "user_id": "u",
+            "role": "member",
+            "role_id": null,
+            "role_name": null,
+            "role_color": null,
+            "joined_at": "2026-11-17T00:00:00Z",
+            "display_name": "Ada",
+            "email": "ada@example.com",
+            "roles": []
+        });
+        let member: WorkspaceMemberResponse =
+            serde_json::from_value(row.clone()).expect("a row without a picture");
+        assert_eq!(member.avatar_url, None);
+        assert_eq!(serde_json::to_value(&member).expect("serialise"), row);
+        let url = crate::user::avatar_url("u", &"ab".repeat(32));
+        let with = WorkspaceMemberResponse {
+            avatar_url: Some(url.clone()),
+            ..member
+        };
+        assert_eq!(
+            serde_json::to_value(&with).expect("serialise")["avatar_url"],
+            json!(url)
         );
     }
 }

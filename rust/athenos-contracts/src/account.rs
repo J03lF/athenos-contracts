@@ -19,7 +19,8 @@
 //!   tries ⇒ `429`. On success every *other* session ends, the session in
 //!   use stays, and a confirmation mail goes to the account's address.
 //! - `GET /user/account/export` ([`AccountExport`]): the person's data as
-//!   one JSON file (a download), bounded in size ([`EXPORT_MAX_BYTES`]).
+//!   one JSON file (a download), bounded in size ([`EXPORT_MAX_BYTES`]),
+//!   their profile picture's bytes included ([`ExportedProfilePicture`]).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -70,10 +71,14 @@ pub const PASSWORD_REASON_UNCHANGED: &str = "password_unchanged";
 
 /// `format` of an export.
 pub const EXPORT_FORMAT: &str = "athenos-account-export";
-/// `version` of the export's shape.
+/// `version` of the export's shape. It changes only when a reader of the
+/// old shape would misread the new one: an added optional key (as
+/// `profile_picture`, pp1) keeps every old reader valid, so it stays `1`.
 pub const EXPORT_VERSION: u32 = 1;
 /// The text an export carries at most (descriptions, comments, notes);
-/// past it the lists stop and `truncated` is set.
+/// past it the lists stop and `truncated` is set. The profile picture is
+/// not text and does not count (it has its own cap,
+/// [`crate::limits::AVATAR_MAX_BYTES`]).
 pub const EXPORT_MAX_BYTES: usize = 8 * 1024 * 1024;
 /// Entries per list at most.
 pub const EXPORT_MAX_ROWS: usize = 5_000;
@@ -212,6 +217,17 @@ pub struct ExportedWorkLog {
     pub logged_at: String,
 }
 
+/// The person's profile picture in the export (pp1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "account/")]
+pub struct ExportedProfilePicture {
+    /// One of [`crate::user::AVATAR_CONTENT_TYPES`].
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub content_base64: String,
+}
+
 /// `GET /user/account/export`: the file
 /// `athenos-export-YYYY-MM-DD.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, TS)]
@@ -223,6 +239,10 @@ pub struct AccountExport {
     pub version: u32,
     pub exported_at: String,
     pub profile: UserProfileResponse,
+    /// The profile picture (pp1); absent without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub profile_picture: Option<ExportedProfilePicture>,
     /// `null` when the person never changed a setting.
     pub settings: Option<UserSettingsResponse>,
     pub legal_consents: Vec<ExportedConsent>,
@@ -296,5 +316,51 @@ mod tests {
         // No language's word is stored.
         assert!(DELETED_PERSON_MARKER.is_ascii());
         assert_ne!(DELETED_PERSON_MARKER, deleted_person_name(true));
+    }
+
+    #[test]
+    fn an_absent_avatar_stays_absent() {
+        // An export from before pp1 has no `profile_picture`.
+        let old = json!({
+            "format": EXPORT_FORMAT,
+            "version": EXPORT_VERSION,
+            "exported_at": "2026-11-17T00:00:00Z",
+            "profile": {
+                "id": "u",
+                "email": "ada@example.com",
+                "display_name": "Ada",
+                "role": "user",
+                "avatar_url": null,
+                "last_login_at": null,
+                "created_at": "2026-11-01T00:00:00Z"
+            },
+            "settings": null,
+            "legal_consents": [],
+            "workspaces": [],
+            "tickets": [],
+            "comments": [],
+            "work_logs": [],
+            "truncated": false
+        });
+        let export: AccountExport =
+            serde_json::from_value(old.clone()).expect("an export without a picture");
+        assert_eq!(export.profile_picture, None);
+        assert_eq!(serde_json::to_value(&export).expect("serialise"), old);
+        let picture = ExportedProfilePicture {
+            content_type: "image/webp".into(),
+            size_bytes: 3,
+            sha256: "ab".repeat(32),
+            content_base64: "AAAA".into(),
+        };
+        let with = AccountExport {
+            profile_picture: Some(picture.clone()),
+            ..export
+        };
+        let value = serde_json::to_value(&with).expect("serialise");
+        assert_eq!(
+            value["profile_picture"],
+            serde_json::to_value(&picture).expect("picture")
+        );
+        assert_eq!(value["version"], json!(1));
     }
 }

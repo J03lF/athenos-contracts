@@ -3,6 +3,7 @@ import type { UserProfileResponse } from "../user/UserProfileResponse";
 import type { UserSettingsResponse } from "../user/UserSettingsResponse";
 import type { ExportedComment } from "./ExportedComment";
 import type { ExportedConsent } from "./ExportedConsent";
+import type { ExportedProfilePicture } from "./ExportedProfilePicture";
 import type { ExportedTicket } from "./ExportedTicket";
 import type { ExportedWorkLog } from "./ExportedWorkLog";
 import type { ExportedWorkspace } from "./ExportedWorkspace";
@@ -20,6 +21,10 @@ format: string,
  * [`EXPORT_VERSION`].
  */
 version: number, exported_at: string, profile: UserProfileResponse, 
+/**
+ * The profile picture (pp1); absent without one.
+ */
+profile_picture?: ExportedProfilePicture, 
 /**
  * `null` when the person never changed a setting.
  */

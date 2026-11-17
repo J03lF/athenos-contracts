@@ -64,6 +64,9 @@ export const ATTACHMENTS_PER_TICKET_MAX = 100;
 /** An attachment's name, after sanitising. */
 export const ATTACHMENT_NAME_MAX_CHARS = 200;
 
+/** A profile picture, in bytes. */
+export const AVATAR_MAX_BYTES = 524288;
+
 /** A ticket's release note, after trimming. */
 export const TICKET_RELEASE_NOTE_MAX_CHARS = 500;
 

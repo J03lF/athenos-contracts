@@ -1,5 +1,5 @@
-//! User contracts: the signed-in person's settings row and profile
-//! (`/user/settings`, `/user/profile`).
+//! User contracts: the signed-in person's settings row, profile and
+//! profile picture (`/user/settings`, `/user/profile`, `/user/avatar`).
 //!
 //! The gateway parses request bodies with these types and forwards what it
 //! parsed, the core reads requests and builds responses with them, and the
@@ -12,6 +12,14 @@
 //! here; they do not refuse unknown keys, because the core reads stored
 //! rows with the same types and a row written by an older build must still
 //! load. The request itself does refuse them.
+//!
+//! The profile picture (pp1): `PUT /user/avatar` at the gateway takes the
+//! raw image bytes and forwards them to the core as one
+//! [`UploadAvatarRequest`]; `GET /users/{user_id}/avatar` at the gateway
+//! reads the core's [`AvatarFileResponse`] and answers the image. Both
+//! wire types are gateway↔core only. A refused picture is `400` (`413`
+//! when too large) with `details.reason` one of the `AVATAR_REASON_*`
+//! constants.
 
 use std::collections::BTreeMap;
 
@@ -192,7 +200,8 @@ pub struct UpdateUserSettingsRequest {
     pub preferences: Option<Map<String, JsonValue>>,
 }
 
-/// The signed-in person, as `GET` and `PUT /user/profile` answer it.
+/// The signed-in person, as `GET` and `PUT /user/profile` and
+/// `PUT /user/avatar` answer it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
 #[ts(export_to = "user/")]
 pub struct UserProfileResponse {
@@ -201,6 +210,10 @@ pub struct UserProfileResponse {
     pub display_name: String,
     /// `admin`, `operator`, `user` or `guest`.
     pub role: String,
+    /// The profile picture as an API path relative to the gateway's API
+    /// root, with its version: `/users/{id}/avatar?v={sha256 hex}` (see
+    /// [`avatar_url`]); `null` without one. Not a public URL: fetch it with
+    /// the session's token.
     pub avatar_url: Option<String>,
     pub last_login_at: Option<String>,
     pub created_at: String,
@@ -216,10 +229,127 @@ pub struct UpdateProfileRequest {
     pub display_name: Option<String>,
 }
 
+/// The profile picture types (pp1), sniffed from the bytes: PNG and WebP
+/// only. The browser re-encodes every picture (WebP, PNG where it cannot
+/// encode WebP), so the server takes no JPEG; no GIF, never SVG.
+pub const AVATAR_CONTENT_TYPES: [&str; 2] = ["image/png", "image/webp"];
+
+/// `details.reason` of a refused profile picture: over
+/// [`crate::limits::AVATAR_MAX_BYTES`] (`413`, with `details.max_bytes`), ...
+pub const AVATAR_REASON_TOO_LARGE: &str = "avatar_too_large";
+/// ... not one of [`AVATAR_CONTENT_TYPES`] by its bytes, or a structure the
+/// allowlist refuses (`400`), ...
+pub const AVATAR_REASON_TYPE: &str = "avatar_type";
+/// ... a pixel size unreadable, zero or over
+/// [`crate::limits::AVATAR_MAX_SIDE`] on a side (`400`, with
+/// `details.max_side`), ...
+pub const AVATAR_REASON_SIZE: &str = "avatar_size";
+/// ... animated (`400`), ...
+pub const AVATAR_REASON_ANIMATED: &str = "avatar_animated";
+/// ... or carrying EXIF, XMP, text, a comment, an unknown ancillary chunk
+/// or a colour profile over [`crate::limits::AVATAR_MAX_ICC_BYTES`]
+/// (`400`).
+pub const AVATAR_REASON_METADATA: &str = "avatar_metadata";
+
+/// `avatar_url` of `user_id`'s picture with `sha256` (lower-case hex, the
+/// whole hash: it is the picture's cache key); the core's SQL writes the
+/// same text (`'/users/' || id || '/avatar?v=' || sha256`).
+pub fn avatar_url(user_id: &str, sha256: &str) -> String {
+    format!("/users/{user_id}/avatar?v={sha256}")
+}
+
+/// `PUT /user/avatar` at the gateway → `POST /user/avatar/upload` at the
+/// core: the whole picture in one call (base64 of at most
+/// [`crate::limits::AVATAR_MAX_BYTES`] fits the host's 2 MiB envelope).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export_to = "user/")]
+pub struct UploadAvatarRequest {
+    pub size_bytes: u64,
+    /// Lower-case hex SHA-256 of the picture.
+    pub sha256: String,
+    pub content_base64: String,
+}
+
+/// The core's answer to `GET /user/avatars/:user_id`, which the gateway's
+/// `GET /users/{user_id}/avatar` turns into the image (gateway↔core only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, TS)]
+#[ts(export_to = "user/")]
+pub struct AvatarFileResponse {
+    /// One of [`AVATAR_CONTENT_TYPES`].
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    /// The picture; absent when the request's `known` is `sha256` (the
+    /// gateway answers `304`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub content_base64: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn avatar_url_has_the_form_the_core_writes() {
+        let sha = "ab".repeat(32);
+        assert_eq!(avatar_url("u", &sha), format!("/users/u/avatar?v={sha}"));
+    }
+
+    #[test]
+    fn avatar_types_are_png_and_webp_only() {
+        assert_eq!(AVATAR_CONTENT_TYPES, ["image/png", "image/webp"]);
+        for t in AVATAR_CONTENT_TYPES {
+            assert!(
+                crate::attachments::AttachmentType::of(t).is_some_and(|a| a.inline),
+                "{t} is an inline attachment type too"
+            );
+        }
+    }
+
+    #[test]
+    fn upload_avatar_refuses_unknown_fields() {
+        let body = json!({ "size_bytes": 3, "sha256": "ab", "content_base64": "AAAA" });
+        let req: UploadAvatarRequest = serde_json::from_value(body.clone()).expect("upload");
+        assert_eq!(req.size_bytes, 3);
+        assert_eq!(serde_json::to_value(&req).expect("serialise"), body);
+        for extra in [
+            json!({ "size_bytes": 3, "sha256": "ab", "content_base64": "AAAA", "content_type": "image/png" }),
+            json!({ "size_bytes": 3, "sha256": "ab", "content_base64": "AAAA", "name": "me.png" }),
+        ] {
+            assert!(
+                serde_json::from_value::<UploadAvatarRequest>(extra.clone()).is_err(),
+                "{extra}"
+            );
+        }
+        assert!(serde_json::from_value::<UploadAvatarRequest>(
+            json!({ "size_bytes": 3, "sha256": "ab" })
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn an_absent_avatar_stays_absent() {
+        let known: AvatarFileResponse = serde_json::from_value(json!({
+            "content_type": "image/webp", "size_bytes": 3, "sha256": "ab"
+        }))
+        .expect("an answer without the bytes");
+        assert_eq!(known.content_base64, None);
+        assert_eq!(
+            serde_json::to_value(&known).expect("serialise"),
+            json!({ "content_type": "image/webp", "size_bytes": 3, "sha256": "ab" })
+        );
+        let full = AvatarFileResponse {
+            content_base64: Some("AAAA".into()),
+            ..known
+        };
+        assert_eq!(
+            serde_json::to_value(&full).expect("serialise")["content_base64"],
+            json!("AAAA")
+        );
+    }
 
     #[test]
     fn a_settings_patch_tells_absent_from_null() {

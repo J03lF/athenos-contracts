@@ -122,6 +122,7 @@ fn render(out: &Path) {
         account::ExportedTicket,
         account::ExportedComment,
         account::ExportedWorkLog,
+        account::ExportedProfilePicture,
         account::AccountExport,
         // the work timer (W6-B)
         timer::TimerResponse,
@@ -1240,6 +1241,11 @@ fn limits_ts() -> String {
             "ATTACHMENT_NAME_MAX_CHARS",
             "An attachment's name, after sanitising.",
             ATTACHMENT_NAME_MAX_CHARS,
+        ),
+        (
+            "AVATAR_MAX_BYTES",
+            "A profile picture, in bytes.",
+            AVATAR_MAX_BYTES,
         ),
         (
             "TICKET_RELEASE_NOTE_MAX_CHARS",

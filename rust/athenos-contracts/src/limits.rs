@@ -71,6 +71,20 @@ pub const ATTACHMENT_PART_MAX_BYTES: usize = 1024 * 1024;
 /// fields around it.
 pub const ATTACHMENT_PART_BODY_MAX_BYTES: usize = ATTACHMENT_PART_MAX_BYTES / 3 * 4 + 64 * 1024;
 
+/// A profile picture, in bytes (pp1): the browser sends a 256×256 WebP or
+/// PNG (tens of KiB); the rest is room for a larger PNG from another
+/// client. Sixteen pieces of [`crate::attachments::ATTACHMENT_CHUNK_BYTES`].
+pub const AVATAR_MAX_BYTES: usize = 512 * 1024;
+/// A profile picture's width and height at most, in pixels (read from the
+/// header, never decoded).
+pub const AVATAR_MAX_SIDE: u32 = 1024;
+/// The colour profile a profile picture may carry at most, in bytes (an
+/// sRGB or Display P3 profile is a few KiB).
+pub const AVATAR_MAX_ICC_BYTES: usize = 16 * 1024;
+/// The JSON body of `POST /user/avatar/upload` at the core: the picture in
+/// base64 and the fields around it.
+pub const AVATAR_UPLOAD_BODY_MAX_BYTES: usize = AVATAR_MAX_BYTES / 3 * 4 + 64 * 1024;
+
 /// A ticket's "Release-Notiz" (W4-H), after trimming: the line the release
 /// notes show instead of its title.
 pub const TICKET_RELEASE_NOTE_MAX_CHARS: usize = 500;
@@ -110,3 +124,27 @@ pub const QUOTA_STORAGE_CODE: &str = "ATH-QUOTA-002";
 /// Over the tickets a person may create per rolling 24 hours
 /// (`quota_tickets_per_day`): `429`.
 pub const QUOTA_TICKETS_PER_DAY_CODE: &str = "ATH-QUOTA-003";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attachments::ATTACHMENT_CHUNK_BYTES;
+
+    /// The host's call envelope: one request carries at most 2 MiB.
+    const HOST_ENVELOPE_BYTES: usize = 2 * 1024 * 1024;
+
+    #[test]
+    fn avatar_limits_fit_the_envelope() {
+        // Checked when the test compiles: the limits are constants.
+        const {
+            // Whole pieces in storage, and one part between gateway and core.
+            assert!(AVATAR_MAX_BYTES % ATTACHMENT_CHUNK_BYTES == 0);
+            assert!(AVATAR_MAX_BYTES <= ATTACHMENT_PART_MAX_BYTES);
+            // The largest picture in base64 plus room for the other fields
+            // fits the core's body limit, and that limit fits the envelope.
+            assert!(AVATAR_MAX_BYTES.div_ceil(3) * 4 + 1024 <= AVATAR_UPLOAD_BODY_MAX_BYTES);
+            assert!(AVATAR_UPLOAD_BODY_MAX_BYTES < HOST_ENVELOPE_BYTES);
+            assert!(AVATAR_MAX_ICC_BYTES < AVATAR_MAX_BYTES);
+        }
+    }
+}
