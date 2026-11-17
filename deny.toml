@@ -21,7 +21,14 @@ version = 2
 yanked = "deny"
 unmaintained = "workspace"
 # Each ignore needs an id, a reason and the step that removes it.
+#
+# RUSTSEC-2026-0543 (new on 2026-11-17): chrono is unmaintained, every
+# version; no release fixes it, and it is not a vulnerability. The contracts
+# use it in 5 files: the DateTime<Utc> and NaiveDate fields of the shared
+# DTOs and their ts-rs types (chrono-impl). It goes when the contracts move
+# to `time` or `jiff`, the first step of that task for all repos.
 ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no fixed release, not a vulnerability; goes when the contracts move to time or jiff" },
 ]
 
 [licenses]
